@@ -1,0 +1,96 @@
+\documentclass[sigplan]{acmart}
+
+% ----------------------------
+% Packages (keep minimal)
+% ----------------------------
+% Add this line BEFORE \usepackage{amssymb}
+\let\Bbbk\relax
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{tikz}
+
+% ----------------------------
+% Metadata (required by ACM)
+% ----------------------------
+\title{On the Limits of Automated Linearizability Verification for Modern Concurrency Patterns}
+{\titlenote{The use of a prepositional opening, often reads as non-assertive. However, this is deliberate: the document is written in reported speech, and this stylistic choice is adopted from Adam Smith’s \emph{The Wealth of Nations}.}}
+
+
+\author{Durwasa Chakraborty}
+\affiliation{
+  \institution{Indian Institute of Technology Madras}
+  \department{Department of Computer Science}
+  \country{India}
+}
+\email{cs24d011@cse.iitm.ac.in}
+
+% Optional: remove if not needed
+\settopmatter{
+  printacmref=false,
+  printccs=false,
+  printfolios=false
+}
+
+\renewcommand\footnotetextcopyrightpermission[1]{}
+\acmConference[Preprint]
+  {Technical Report}
+  {2026}
+  {Chennai, India}
+
+% ----------------------------
+% Document
+% ----------------------------
+\begin{document}
+
+
+% ----------------------------
+% Abstract
+% ----------------------------
+\begin{abstract}
+  Modern multicore systems operate under relaxed memory models, where the
+  observable behavior of concurrent programs may diverge significantly from
+  sequentially consistent executions. While many existing verification techniques
+  for concurrent data structures assume sequential consistency, practical systems
+  and language runtimes expose weaker memory semantics, thereby complicating
+  formal reasoning about correctness.
+
+  This report investigates the problem of verifying correctness properties of
+  concurrent algorithms under different memory models, with particular emphasis on
+  atomicity, linearizability, and progress guarantees. Rather than treating
+  verification as a secondary concern following algorithm design, we position it
+  as the primary challenge in reasoning about modern concurrent systems.
+
+  As a concrete vehicle for this study, we examine multi-word compare-and-swap
+  (hereinafter \emph{MCAS}) \cite{Harris2002} algorithms, which serve as a representative and
+  demanding case study for modern verification techniques. We survey existing
+  verification methodologies and tools, and identify open challenges in reasoning
+  about linearizability under language-level memory models.
+
+
+\end{abstract}
+
+\maketitle
+
+% ----------------------------
+% Sections
+% ----------------------------
+
+\input{sections/01_introduction}
+
+\input{sections/02_paper_1}
+\input{sections/03_paper_2}
+\input{sections/04_paper_3}
+\input{sections/05_paper_4}
+
+\section{Related Work}
+% Zoo, RELINCHE, Cosmo, etc.
+
+\section{Discussion and Open Problems}
+
+\section{Conclusion}
+
+\bibliographystyle{plain}
+\bibliography{./references}
+\end{document}

@@ -1,0 +1,94 @@
+\section{Linearizability: A Correctness Condition for Concurrent Objects\cite{HerlihyWing1990} }
+
+\subsection{Motivation}
+
+Concurrency is now a given rather than a design choice, and shared
+\emph{concurrent objects} are unavoidable in system construction. The remaining
+challenge is no longer how to exploit concurrency, but how to ascribe precise
+meaning to object behavior in the presence of arbitrary interleavings. The challenge is how to
+exploit concurrency and assign precise meaning to object behavior in the
+presence of interleavings, that may grow astronomically. In the battle between
+performance and correctness, the canons of sound engineering practices always
+should prioritize correctness, thus motivating the study of correctness conditions
+for concurrent objects.
+
+The fundamental question concurrency raises is: what is the intended behavior of an
+object when its operations are interleaved in many possible ways? If thread~A
+performs $m$ operations and thread~B performs $n$ operations, the number of
+possible interleavings grows combinatorially, on the order of
+$\binom{m+n}{m}$. Whether such executions are correct depends entirely on the
+object’s specification.
+
+For example, a queue is not tied to a single behavior; instead it comes with a
+specification that describes which input/output traces are allowed. In a classic FIFO,
+queue, if elements are enqueued as $\langle 1,2,3\rangle$, every legal execution must
+dequeue them as verbatim $\langle 1,2,3\rangle$. In contrast, large-scale asynchronous
+systems such Kafka-based queues typically adopt a different delivery specification(s).
+For example \emph{at-least-once delivery}, in such a system producing $\langle 1,2,3\rangle$
+may legally result in consumer-visible traces like $\langle 1,1,1,2,3\rangle$ or multiple
+replays of $\langle 1,2,3\rangle$  $\langle 1,2,3\rangle$. Correctness, therefore, is
+a function of the chosen delivery specification.
+
+This leads to a central question: who defines correctness, and how can it
+be verified? Linearizability answers this question by providing a precise and
+compositional correctness condition that allows programmers to reason about
+concurrent executions using familiar sequential semantics.
+
+\subsection{Definition of Linearizability}
+
+A history $H$ is \emph{linearizable} if it can be extended to a history $H'$ such
+that:
+\begin{enumerate}
+  \item $\mathrm{complete}(H')$ is equivalent to a legal sequential history $S$,
+  \item the real-time order is preserved, i.e., $<_H \subseteq <_S$.
+\end{enumerate}
+
+Here, $\mathrm{complete}(H')$ denotes the maximal subsequence of $H'$ obtained by
+removing pending invocations. Linearizability permits nondeterminism: multiple
+sequential histories may justify the same concurrent execution, provided that at
+least one such history exists.
+
+
+
+
+\subsection{Proposed Solution}
+
+Consider an execution history $H$ consisting of invocation and response events
+observed over time. We assume that events are totally ordered by real time, in
+the sense that no two events occur at exactly the same instant; any two events are
+separated by some (possibly very small) time difference.
+
+Such a history admits two complementary views. At the lowest level, $H$ reflects
+the concrete execution of the program: the individual instructions that realize
+each method call. We refer to this as the \emph{representation-level} view
+(\textsf{REP}). At a higher level, the same execution can be viewed in terms of
+method invocations and responses governed by an abstract object specification;
+this is the \emph{abstract-level} view (\textsf{ABS}).
+
+Linearizability asks whether the behavior observed at the representation level
+can be explained by some legal abstract execution. Rather than reasoning directly
+about all possible interleavings, the paper suggests a different perspective.
+One may consider the set of all sequential executions obtained by linearizing
+the concrete history $H\!\restriction_{\textsf{REP}}$, and ask whether each such
+execution admits a valid abstract explanation.
+
+Formally, suppose there exists an invariant $I$ over representation states and a
+mapping
+\[
+A : \textsf{REP} \to 2^{\textsf{ABS}}
+\]
+that associates each concrete state with abstract state.
+
+The abstraction function maps each concrete state to a set of abstract states
+consistent with the specification. If, for all
+$r \in \mathrm{Lin}(H\!\restriction_{\textsf{REP}})$, the invariant $I(r)$ holds
+and
+\[
+  A(r) \subseteq \mathrm{Lin}(H\!\restriction_{\textsf{ABS}}),
+\]
+then the concrete implementation is linearizable with respect to the abstract
+object.
+
+This perspective, implicit in the original formulation of linearizability,
+provides a natural bridge to later work that seeks to mechanize such reasoning
+and to check these conditions automatically.

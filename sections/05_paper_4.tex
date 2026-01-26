@@ -1,0 +1,76 @@
+\section{Zoo: A Framework for the Verification of Concurrent OCaml 5 Programs using Separation Logic\cite{zoo2026}}
+\subsection{Motivation}
+
+So far, we have focused on linearizability for data structures in which
+the linearization point can be identified either within the operation
+itself or within another method invoked during its execution. We now
+shift attention to concurrent libraries operating under a language-
+specific memory model. The release of OCaml 5 introduced true
+parallelism via multicore support, enabling a growing ecosystem of
+concurrent libraries such as \textsf{Saturn}, \textsf{Eio}, and
+\textsf{Kcas}. While this substantially broadened OCaml’s applicability,
+it also raised new verification challenges, particularly the lack of a
+practical framework for reasoning about realistic concurrent OCaml
+programs that rely on features such as algebraic data types and mutable
+records.
+
+Existing Iris-based approaches, including \emph{HeapLang}, are expressive
+but poorly aligned with OCaml. They lack essential language constructs,
+most notably algebraic data types and mutually recursive functions, and
+require substantial manual translation from OCaml into the modeling
+language. This translation burden complicates proof maintenance and
+weakens the connection to source programs. Moreover, OCaml’s concurrency
+support exposed semantic gaps: atomic record fields were absent, unsafe
+casts were common, and the semantics of physical equality for
+compare-and-set were under-specified.
+
+The paper is motivated by these limitations. Its goal is to develop a
+practical verification framework for real-world concurrent OCaml
+programs, while refining the language and its semantics to better
+support safe and verifiable concurrency.
+
+
+\subsection{Proposed Solution}
+The authors propose Zoo, a comprehensive framework for verifying concurrent OCaml 5 programs using Iris, a state-of-the-art concurrent separation logic mechanized in the Rocq proof assistant.
+\vspace{-0.5\baselineskip}
+\paragraph{ZooLang.}
+At the core of Zoo is ZooLang, a language designed to faithfully model a substantial fragment of OCaml. ZooLang supports algebraic data types, mutable and immutable records, references, atomic operations, mutual recursion, and concurrency primitives. It is deeply embedded in Rocq and comes with a formally defined operational semantics and a corresponding Iris-based program logic. The framework includes a tool, \textsf{ocaml2zoo}, which translates OCaml source programs into ZooLang code embedded in Rocq. Unlike HeapLang, which introduces various encodings in the translation that make the relation between source and verified programs difficult to maintain, ZooLang is syntactically very close to OCaml, ensuring that verification artifacts remain aligned with real implementations.
+
+\vspace{-0.5\baselineskip}
+\paragraph{Specifications and Proofs.}
+Once translated to ZooLang, users can write specifications and prove them in Iris. For example,
+the specification of \texttt{stack\_push} is:
+
+$\textsf{Lemma stack\_push\_spec t}\ \ell\ \textsf{v} : \\
+\text{}\qquad<<< \textsf{stack\_inv t} \ \ell \\
+\text{}\qquad\qquad\mid \forall\forall \ \textsf{vs},\ \text{stack\_model t vs} >>> \\
+\text{}\qquad\qquad\textsf{stack\_push t v}\ @\ \uparrow \ell \\
+\text{}\qquad<<< \textsf{stack\_model t (v :: vs)} \\
+\text{}\qquad\qquad\mid \textsf{RET (); True} >>>.$
+
+As in Hoare logic, the specification consists of pre- and postconditions,
+each split into a private part (the stack invariant \textsf{stack\_inv t}) and an atomic part (the abstract stack state \textsf{stack\_model}). The atomic conditions capture the linearization point, stating that during execution the stack’s abstract state is atomically updated from vs to v :: vs.
+
+%% (TODO Reduce the line space)
+
+\vspace{-0.5\baselineskip}
+\paragraph{Language Extensions: Atomic Record Fields.}
+The authors identified limitations in OCaml’s support for atomic operations, particularly the inefficiency of atomic
+references that introduce additional indirection. To address this, they designed and implemented atomic record fields,
+allowing individual record fields to be marked as atomic.
+
+\vspace{-0.5\baselineskip}
+\paragraph{Physical Equality: A Precise Semantics.}
+A major technical contribution is a new, precise semantics for physical equality and \texttt{compare\_and\_set}.
+Physical equality is essential for lock-free algorithms but is subtle and dependent on compiler optimizations such
+as sharing and unsharing. The authors show that equating physical equality with structural equality is unsound.
+Instead, they model it as non-deterministic with carefully specified guarantees. They also introduce a mechanism
+for controlling unsharing through generative constructors, enabling sound reasoning.
+
+\subsection{Conclusion}
+This paper introduces Zoo, a practical framework for verifying concurrent OCaml 5 programs, bridging
+real-world code and mechanized verification through ZooLang. It also contributes language improvements
+such as atomic record fields and a precise semantics for physical equality.
+Using Zoo, the authors verified a subset of the OCaml standard library, components of the \textsf{Eio} library, and a
+large portion of the \textsf{Saturn} lock-free data structure library, including stacks, queues, bags, and a work-stealing
+deque. These results demonstrate the practicality and scalability of the framework.

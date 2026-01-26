@@ -1,0 +1,44 @@
+# =========================
+# LaTeX build artifacts
+# =========================
+
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.toc
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.texput.log
+*.run.xml
+*.bcf
+
+# =========================
+# Editor / OS noise
+# =========================
+
+*~
+.#*
+*.swp
+*.swo
+.DS_Store
+
+# =========================
+# Ignore org temporary files (keep notes.org)
+# =========================
+
+*.org~
+
+# =========================
+# Keep source + final outputs
+# =========================
+
+!*.tex
+!*.bib
+!*.org
+!*.md
+!*.pdf

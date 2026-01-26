@@ -1,0 +1,34 @@
+% ===============================================================================
+% Introduction Section
+% ===============================================================================
+\section{Introduction}
+In contemporary computing systems, performance improvements are achieved
+primarily through the effective utilization of multicore architectures,
+rather than through continued increases in single-core clock frequency. This
+architectural shift follows the breakdown of Dennard scaling
+\cite{Dennard1974}, under which further increases in transistor density could
+no longer be accompanied by proportional reductions in power consumption and
+heat dissipation. Consequently, processor design has evolved toward multicore
+architectures as the principal mechanism for performance scaling.
+
+As concurrency has become ubiquitous, the central challenge has shifted from
+achieving parallelism to reasoning about correctness in its presence. The
+nondeterminism inherent in concurrent execution, together with the exponential
+growth of possible interleavings on multicore systems, renders conventional
+testing methodologies that involves an array of testing suites inadequate.
+Establishing correctness therefore requires formal reasoning frameworks capable
+of expressing and verifying properties such as atomicity, linearizability, and progress.
+
+The remainder of this report is organized as follows. Section 2 presents the
+formal definition of linearizability\cite{HerlihyWing1990} . Section 3 surveys automated and
+semi-automated approaches to linearizability verification, with particular
+emphasis on mechanically assisted techniques.~\cite{Vafeiadis2010}.Building on
+this background, Section 4 investigates linearizability in the
+context of a non-trivial concurrent data structure, namely \emph{kCAS}.\cite{Guerraoui2013}
+This section highlights why traditional linearization-point-based reasoning
+becomes inadequate in these settings.To address these challenges, we then discuss
+modern reasoning frameworks based on concurrent separation logic.
+In particular, we examine recent advances such as Zoo, which provides a
+compositional framework for verifying fine-grained concurrent algorithms,
+as well as Cosmo, a concurrent separation logic tailored to the multicore
+OCaml memory model. TODO.

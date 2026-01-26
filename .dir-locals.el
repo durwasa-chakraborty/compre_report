@@ -1,0 +1,5 @@
+((latex-mode . ((reftex-bibliography . ("references.bib"))
+                (reftex-default-bibliography . ("references.bib"))
+                (eval . (reftex-mode 1))))
+ (org-mode . ((reftex-bibliography . ("references.bib"))
+              (reftex-default-bibliography . ("references.bib")))))

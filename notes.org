@@ -1,0 +1,214 @@
+#+title: Notes
+
+
+* Abstract
+
+Compare-and-Swap [2] (hereinafter CAS) is a widely supported atomic primitive that conditionally updates a single memory word based on a comparison with an expected value. Building upon CAS, prior research has introduced multi-word compare-and-swap [3] (hereinafter MCAS), which generalizes atomicity across multiple memory locations and enables the construction of more expressive lock-free concurrent data structures.
+
+The inherent complexity of multicore and concurrent systems results in large and highly nondeterministic state spaces, rendering conventional testing insufficient for establishing correctness guarantees. Consequently, rigorous methods for the design, implementation, and verification of MCAS-based algorithms are required.
+
+This report examines existing approaches for constructing correct and efficient multi-word synchronization mechanisms, with particular attention to their behavior under formally defined memory models. It further surveys the verification techniques and tooling employed to reason about correctness properties such as atomicity, linearizability, and progress guarantees.
+
+
+* Introduction
+
+Modern programming languages provide explicit support for concurrent programming. In contemporary computing systems, performance improvements are achieved primarily through effective utilization of multicore architectures rather than increases in single-core clock frequency. This shift is a consequence of the breakdown of Dennard scaling [1], which established that further increases in transistor density could no longer be accompanied by proportional reductions in power consumption and heat dissipation. As a result, architectural progress transitioned toward multicore designs.
+
+MCAS builds upon the idea of using multiword compare and swap and efficient kcas which is such k-cas called as RKMZ algorithm. But before that we will uncover some definitions, in this hilghtly cited seminal work on what is Linearizability go through the definitions such as
+
+in order to test for the correctness of a we need to verify them using proof assistants for separation logic.
+
+The r est of the report is organized as follows : Section 2 discusss a seminal work on what is the k-cas how does the implementation work and a new approach of using using lazy read section 3 introduces the hilghyl cited and seminal work linearizability and sets the formalism for the discussion of what it means by linearizability. Section 4 covers the automatic ways of detecting the linearizability using the CAV paper victor vafeiadas automatically proving linearizability. We graduate to a more modern approach of using separation logic frameworks to reason about concurrent programming language etc.
+
+
+* MCAS an efficient approach to do multiword compare and swap []
+
+** Motivation
+** Proposed Solution
+** Conclusion
+
+* Linearizability
+* automatic linearizability
+* efficient mcas algorithm
+
+
+
+
+* Linearizability: A Correctness Condition for Concurrent Objects
+
+* Motivation
+
+Modern computing systems no longer derive performance primarily from increasing clock frequencies. Compiler optimizations, relaxed memory models, and ubiquitous multicore architectures have rendered concurrency the dominant execution model. As a result, concurrent objects—shared data structures accessed by multiple threads—form the backbone of scalable systems. However, correctness remains the central concern in this race for performance. As in Rutherford’s alpha-particle experiments, where the rare particle deflected at nearly 180 degrees reshaped our understanding of atomic structure, it is the exceptional and unexpected executions in concurrent systems that reveal fundamental design flaws.
+
+However, concurrency introduces a fundamental question:
+**What is the intended behavior of an object when its operations are interleaved in many possible ways?**
+
+If thread A performs *m* operations and thread B performs *n* operations, the number of possible interleavings grows combinatorially (on the order of (\binom{m+n}{m})). Not all interleavings are necessarily acceptable. Whether an execution is correct depends entirely on the **specification** of the object.
+
+Consider a queue. If values (\langle 1, 2, 3 \rangle) are enqueued, a first-in-first-out specification demands that dequeue operations observe that order. Yet not all systems demand such strict guarantees. For instance, large-scale asynchronous systems—such as event-driven request pipelines or log-based messaging infrastructures—may deliberately relax ordering guarantees to prioritize throughput and availability. In such systems, a request may be replayed, duplicated, or reordered while still satisfying the system’s specification.
+
+This raises a slippery—but unavoidable—question, borrowing from an Aristotelian line of reasoning:
+**Who decides what correctness means, and how do we verify it?**
+
+Linearizability emerges as the **acme** of correctness conditions for concurrent objects precisely because it answers this question without sacrificing either rigor or usability. It becomes the *calling-card* of a concurrent object: if an implementation is linearizable, programmers can reason about it as if operations occurred atomically, even though they did not.
+
+The seminal work by Herlihy and Wing makes four foundational contributions:
+
+* A precise, mathematical definition of **linearizability**
+* Key properties of linearizability, notably **locality** and **non-blocking behavior**
+* A comparison with weaker or alternative correctness conditions such as **sequential consistency** and **serializability**
+* Proof techniques for establishing that a concurrent implementation is linearizable
+
+---
+
+#### Definition and Core Idea
+
+Informally, linearizability requires that every operation on a concurrent object appear to take effect **instantaneously** at some point between its invocation and its response.
+
+Formally, a history (H) is **linearizable** if it can be extended to a history (H') such that:
+
+1. **(Sequential Equivalence)**
+   [
+   \text{complete}(H') \equiv S
+   ]
+   where (S) is a legal **sequential** history respecting the object’s specification.
+
+2. **(Real-Time Order Preservation)**
+   [
+   <_H ;\subseteq; <_S
+   ]
+   meaning that if one operation finishes before another begins in real time, that order must be preserved in the sequential history.
+
+Here, (\text{complete}(H')) denotes the **maximal subsequence** of (H') obtained by removing pending invocations—operations that have been called but not yet returned. This allows pending operations to either take effect or not, as long as the resulting behavior is consistent with *some* sequential execution.
+
+Crucially, linearizability tolerates **nondeterminism**:
+there may exist multiple valid sequential histories (S) that justify the same concurrent execution. What matters is that **at least one such sequential explanation exists**.
+
+---
+
+#### Queue Example and Intuition
+
+Consider a concurrent queue with overlapping enqueue and dequeue operations. Linearizability permits:
+
+* An element to be dequeued before its enqueue operation returns
+* Concurrent enqueues to be ordered arbitrarily
+* Pending operations to be either visible or invisible in the abstract state
+
+What it forbids is:
+
+* Dequeuing an element that was never enqueued
+* Dequeuing the same element twice
+* Observing an order that contradicts real-time precedence
+
+A box-and-interval (whisker) diagram makes this intuition precise: each operation spans a time interval, and linearization corresponds to choosing a single instant inside each interval such that the resulting total order satisfies the sequential specification.
+
+---
+
+#### Why Linearizability Matters
+
+Linearizability provides three decisive advantages:
+
+1. **Locality**
+   Each object can be verified independently. If every object is linearizable, the entire system is linearizable.
+
+2. **Non-blocking Semantics**
+   Total operations are never forced to wait purely to preserve correctness. Blocking arises only from implementation choices, not from the correctness condition itself.
+
+3. **Sequential Reasoning**
+   Programmers can reason about concurrent executions using familiar pre- and post-conditions, as if the system were sequential.
+
+In short, linearizability gives us the strongest correctness guarantee that still scales to real systems—making it the definitive correctness condition for concurrent objects.
+
+
+```latex
+%===============================================================================
+% Paper 1: Analysis Template
+%===============================================================================
+
+\chapter{Paper 1: Linearizability --- A Correctness Condition for Concurrent Objects}
+\label{ch:paper1}
+
+\section{Motivation}
+
+Modern computing systems derive performance not from increasing clock speeds,
+but from compiler optimizations, relaxed memory models, and the pervasive use of
+multicore architectures. Consequently, concurrency has become the dominant
+execution model, and shared \emph{concurrent objects} are central to system
+design.
+
+Concurrency, however, raises a fundamental question: what is the intended
+behavior of an object when its operations are interleaved in many possible ways?
+If thread A performs $m$ operations and thread B performs $n$ operations, the
+number of possible interleavings grows combinatorially, on the order of
+$\binom{m+n}{m}$. Whether such executions are correct depends entirely on the
+object’s specification.
+
+For example, a FIFO queue requires that elements enqueued in the order
+$\langle 1,2,3\rangle$ be dequeued in the same order. In contrast, large-scale
+asynchronous systems may deliberately relax ordering guarantees to prioritize
+throughput and availability, while still satisfying their own specifications.
+
+This tension leads to a central question: who defines correctness, and how can
+it be verified? Linearizability answers this question while preserving both
+rigor and usability. It represents the \emph{acme} of correctness conditions for
+concurrent objects, serving as a conceptual \emph{calling-card} that allows
+programmers to reason about concurrent behavior using familiar sequential
+semantics.
+
+The seminal work by Herlihy and Wing makes four key contributions:
+\begin{itemize}
+  \item A formal definition of linearizability
+  \item Fundamental properties such as locality and non-blocking behavior
+  \item A comparison with alternative correctness conditions
+  \item Proof techniques for establishing linearizability
+\end{itemize}
+
+\section{Definition of Linearizability}
+
+A history $H$ is \emph{linearizable} if it can be extended to a history $H'$
+such that:
+\begin{enumerate}
+  \item $\text{complete}(H')$ is equivalent to a legal sequential history $S$
+  \item The real-time order is preserved, i.e., $<_H \subseteq <_S$
+\end{enumerate}
+
+Here, $\text{complete}(H')$ denotes the maximal subsequence of $H'$ obtained by
+removing pending invocations. Linearizability permits nondeterminism: multiple
+sequential histories may justify the same concurrent execution, as long as at
+least one exists.
+
+\section{Intuition via Queues}
+
+In a concurrent queue, linearizability allows operations to appear to take
+effect before they return and permits concurrent enqueues to be ordered
+arbitrarily. It forbids behaviors such as dequeuing elements that were never
+enqueued or violating real-time precedence constraints.
+
+A box-and-interval diagram illustrates this idea: each operation spans a time
+interval, and linearization corresponds to choosing a single instant within each
+interval that yields a valid sequential execution.
+
+\section{Why Linearizability Matters}
+
+Linearizability offers three decisive advantages:
+\begin{enumerate}
+  \item \textbf{Locality}: objects can be verified independently
+  \item \textbf{Non-blocking semantics}: total operations need not wait
+  \item \textbf{Sequential reasoning}: correctness can be argued using
+        pre- and post-conditions
+\end{enumerate}
+
+Together, these properties make linearizability the strongest correctness
+condition that remains practical for real-world concurrent systems.
+
+\newpage
+```
+
+---
+
+
+*
+
+A is a functionthat takes a rep and then returns one of the possible 2^ABS states
+and thus we need to show that forall r in Lin(H|Rep) where I(r) an invariant holds and
+A(r) is a subsetq of Lin(H|ABS)

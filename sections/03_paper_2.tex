@@ -1,0 +1,105 @@
+\section{Automatically Proving Linearizability \cite{Vafeiadis2010}}
+
+\subsection{Motivation}
+
+We established in the previous section that \emph{linearizability} is the standard correctness condition for concurrent
+objects, yet establishing it for realistic implementations remains
+difficult.
+We explore an alternate way of proving linearizability by identifying \emph{linearization points}:
+an instant during the operations's execution at which the effect is deemed to occur
+atomically. While this approach is effective for simple implementations, it becomes increasingly fragile as
+algorithms grow more sophisticated. In many cases, a linearization point may be
+conditional, may occur in a different thread, or may depend on future execution.
+This is particularly common for operations that do not logically modify the
+shared abstract state, such as unsuccessful lookups or dequeue operations that
+return \textsf{EMPTY}. For such operations, insisting on a concrete
+linearization point often obscures, rather than clarifies, the correctness
+argument.
+
+At the same time a different category of operations exist,
+\emph{effectful operations}, different in the sense that they necessarily update the abstract state,
+and those that are \emph{pure}, in the sense that they do not update the state.
+Effectful operations often, thus by established definition of the point where the effect takes place, becomes a natural candidate for linearization points, while
+pure operations do not. The key insight of the paper is that these two classes of
+executions should be treated differently, and that linearizability can be
+established without explicitly committing to a linearization point for every
+operation.
+
+\subsection{Proposed Solution}
+
+The proposed approach replaces explicit reasoning about linearization points and
+sequential histories with an instrumentation-based verification strategy. Rather
+than attempting to construct or guess a global linearization, the method embeds
+the abstract specification directly into the concrete implementation through
+additional state and assertions. Linearizability is then reduced to the problem
+of showing that certain assertions cannot fail.
+
+The core idea is to distinguish, within a single execution, whether an operation
+has performed an effectful abstract update or whether it has remained pure. For
+effectful executions, the abstract operation is executed at a candidate
+instruction that is already present in the implementation, such as a successful
+compare-and-swap. For pure executions, the method refrains from choosing a
+specific linearization point; instead, it records which return values are
+consistent with the abstract specification at some point during the execution.
+
+This distinction is realized by instrumenting each operation with auxiliary
+variables that track abstract effects. One variable records the result of an
+effectful abstract execution, if such an execution occurs. In parallel, a family
+of flags records whether particular return values are admissible for a pure
+execution according to the specification. Initially, no abstract effect is
+assumed to have taken place, and no return value is assumed to be valid.
+
+As the concrete execution proceeds, candidate effectful linearization points
+trigger the execution of the abstract specification, and the result of this
+execution is stored. Independently, whenever the specification permits a pure
+operation to return a certain value without modifying the abstract state, the
+corresponding admissibility flag is enabled. At each return point of the concrete
+method, a single assertion is checked: either an effectful abstract update has
+occurred and the concrete return value matches the recorded abstract result, or
+no effectful update has occurred and the returned value is among those permitted
+by the specification.
+
+Crucially, this assertion localizes the linearizability argument. Instead of
+quantifying over all possible linearizations of the execution history, the proof
+obligation reduces to a safety property of the instrumented program. If the
+assertion holds on all executions, then every concrete behavior admits a valid
+abstract explanation, and the implementation is linearizable.
+
+\subsection{Example: Concurrent Queue}
+
+The intuition behind the method can be illustrated using a concurrent queue with
+operations \textit{enqueue} and \textit{dequeue}. Successful enqueue operations
+are effectful: they necessarily extend the abstract queue. In typical
+implementations, this effect corresponds to a concrete instruction that links a
+new node into the data structure. At this instruction, the abstract enqueue
+operation is executed, and its result is recorded.
+
+In contrast, a dequeue operation that returns \textsf{EMPTY} does not modify the
+abstract queue. Such an execution may span multiple reads and checks, and no
+single instruction need correspond to its logical effect. Rather than assigning
+it an artificial linearization point, the method simply checks whether returning
+\textsf{EMPTY} is consistent with the abstract queue being empty at some point
+during the execution. If so, the return is deemed admissible.
+
+\subsection{Verification Procedure}
+
+Once the implementation has been instrumented, linearizability checking reduces
+to verifying that the return-point assertions are never violated. This task can
+be discharged using existing static analysis techniques, such as abstract
+interpretation or symbolic execution. Importantly, the verification is performed
+on the concrete program augmented with ghost state, and does not require
+explicit enumeration of concurrent interleavings or sequential histories.
+
+\subsection{Conclusion}
+
+The approach presented in this paper offers a practical and conceptually clean
+path to automated linearizability proofs. By separating effectful and pure
+executions and embedding the abstract specification directly into the
+implementation, it avoids the need for explicit linearization points in cases
+where they are difficult or unnatural to identify. Linearizability is reduced to
+a local safety property, enabling the use of mature verification tools.
+
+The method has been implemented in the \textsc{Cave} verification tool and
+evaluated on a range of concurrent stacks, queues, and set implementations.
+These results demonstrate that the approach is expressive enough to handle
+realistic concurrent data structures while remaining amenable to automation.
