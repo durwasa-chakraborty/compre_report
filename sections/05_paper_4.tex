@@ -1,76 +1,150 @@
-\section{Zoo: A Framework for the Verification of Concurrent OCaml 5 Programs using Separation Logic\cite{zoo2026}}
+\section{Efficient Multi-word Compare and Swap\cite{Guerraoui2013}}
+
 \subsection{Motivation}
 
-So far, we have focused on linearizability for data structures in which
-the linearization point can be identified either within the operation
-itself or within another method invoked during its execution. We now
-shift attention to concurrent libraries operating under a language-
-specific memory model. The release of OCaml 5 introduced true
-parallelism via multicore support, enabling a growing ecosystem of
-concurrent libraries such as \textsf{Saturn}, \textsf{Eio}, and
-\textsf{Kcas}. While this substantially broadened OCaml’s applicability,
-it also raised new verification challenges, particularly the lack of a
-practical framework for reasoning about realistic concurrent OCaml
-programs that rely on features such as algebraic data types and mutable
-records.
 
-Existing Iris-based approaches, including \emph{HeapLang}, are expressive
-but poorly aligned with OCaml. They lack essential language constructs,
-most notably algebraic data types and mutually recursive functions, and
-require substantial manual translation from OCaml into the modeling
-language. This translation burden complicates proof maintenance and
-weakens the connection to source programs. Moreover, OCaml’s concurrency
-support exposed semantic gaps: atomic record fields were absent, unsafe
-casts were common, and the semantics of physical equality for
-compare-and-set were under-specified.
+At this stage, the verification landscape includes several automated linearizability provers and checkers, supporting both stateless and stateful exploration of concurrent executions.
 
-The paper is motivated by these limitations. Its goal is to develop a
-practical verification framework for real-world concurrent OCaml
-programs, while refining the language and its semantics to better
-support safe and verifiable concurrency.
+However, a critical class of implementations remains fundamentally outside the reach of existing automation. In these implementations, linearization points are non-local: the operation may be completed by a thread other than the one that invoked it; the point at which the operation takes effect may lie outside the scope of the method call.
+
+Multi-word compare-and-swap (hereafter MCAS) occupies precisely this gap. MCAS is designed for multicore systems, where performance is achieved not through coarse-grained mutual exclusion, but through cooperative progress, descriptor-based indirection, and helping. As a result, MCAS serves as a compelling and necessary case study to study beyong canonical data structures.
 
 
-\subsection{Proposed Solution}
-The authors propose Zoo, a comprehensive framework for verifying concurrent OCaml 5 programs using Iris, a state-of-the-art concurrent separation logic mechanized in the Rocq proof assistant.
-\vspace{-0.5\baselineskip}
-\paragraph{ZooLang.}
-At the core of Zoo is ZooLang, a language designed to faithfully model a substantial fragment of OCaml. ZooLang supports algebraic data types, mutable and immutable records, references, atomic operations, mutual recursion, and concurrency primitives. It is deeply embedded in Rocq and comes with a formally defined operational semantics and a corresponding Iris-based program logic. The framework includes a tool, \textsf{ocaml2zoo}, which translates OCaml source programs into ZooLang code embedded in Rocq. Unlike HeapLang, which introduces various encodings in the translation that make the relation between source and verified programs difficult to maintain, ZooLang is syntactically very close to OCaml, ensuring that verification artifacts remain aligned with real implementations.
+\subsection[Verification Detail]{Proposed Solution}
 
-\vspace{-0.5\baselineskip}
-\paragraph{Specifications and Proofs.}
-Once translated to ZooLang, users can write specifications and prove them in Iris. For example,
-the specification of \texttt{stack\_push} is:
+CAS is a hardware-supported atomic primitive that compares the contents of a memory location with an expected value and, if they match, atomically updates it to a new value.
 
-$\textsf{Lemma stack\_push\_spec t}\ \ell\ \textsf{v} : \\
-\text{}\qquad<<< \textsf{stack\_inv t} \ \ell \\
-\text{}\qquad\qquad\mid \forall\forall \ \textsf{vs},\ \text{stack\_model t vs} >>> \\
-\text{}\qquad\qquad\textsf{stack\_push t v}\ @\ \uparrow \ell \\
-\text{}\qquad<<< \textsf{stack\_model t (v :: vs)} \\
-\text{}\qquad\qquad\mid \textsf{RET (); True} >>>.$
+MCAS  generalizes CAS to multiple memory locations. An MCAS operation over $k$ locations atomically performs the following logical action:
 
-As in Hoare logic, the specification consists of pre- and postconditions,
-each split into a private part (the stack invariant \textsf{stack\_inv t}) and an atomic part (the abstract stack state \textsf{stack\_model}). The atomic conditions capture the linearization point, stating that during execution the stack’s abstract state is atomically updated from vs to v :: vs.
+\begin{center}
+If all locations $x_1, \ldots, x_k$ contain values $o_1, \ldots, o_k$, then update them to $n_1, \ldots, n_k$; otherwise, leave all locations unchanged.
+\end{center}
 
-%% (TODO Reduce the line space)
 
-\vspace{-0.5\baselineskip}
-\paragraph{Language Extensions: Atomic Record Fields.}
-The authors identified limitations in OCaml’s support for atomic operations, particularly the inefficiency of atomic
-references that introduce additional indirection. To address this, they designed and implemented atomic record fields,
-allowing individual record fields to be marked as atomic.
+\subsubsection{Classical Descriptor-Based MCAS}
 
-\vspace{-0.5\baselineskip}
-\paragraph{Physical Equality: A Precise Semantics.}
-A major technical contribution is a new, precise semantics for physical equality and \texttt{compare\_and\_set}.
-Physical equality is essential for lock-free algorithms but is subtle and dependent on compiler optimizations such
-as sharing and unsharing. The authors show that equating physical equality with structural equality is unsound.
-Instead, they model it as non-deterministic with carefully specified guarantees. They also introduce a mechanism
-for controlling unsharing through generative constructors, enabling sound reasoning.
+Traditional lock-free MCAS implementations use a descriptor to coordinate the update across multiple locations. The protocol proceeds in three phases.
+
+\paragraph{Example}
+
+Consider three memory locations:
+\begin{center}
+$x = 1, \quad y = 2, \quad z = 3$
+\end{center}
+
+We wish to atomically perform:
+\begin{center}
+$(x, y, z) : (1,2,3) \rightarrow (4,5,6)$
+\end{center}
+Here, $k = 3$.
+
+\paragraph{Phase 1: Freeze (Lock) Phase :: $k$ CAS operations}
+
+Each target location is CASed from its expected value to a pointer to a shared descriptor $D$. Each CAS both checks the value and locks the location.
+
+\begin{center}
+\texttt{CAS}$(x, 1, \&D)$ \\
+\texttt{CAS}$(y, 2, \&D)$ \\
+\texttt{CAS}$(z, 3, \&D)$
+\end{center}
+
+If any CAS fails, the operation aborts.
+
+\paragraph{Phase 2: Decision Phase :: 1 CAS operation}
+
+The descriptor's status is atomically updated to record the outcome:
+
+\begin{center}
+\texttt{CAS}$(D.\text{status}, \text{ACTIVE}, \text{SUCCESS})$
+\end{center}
+
+This CAS constitutes the linearization point of the MCAS operation.
+
+\paragraph{Phase 3: Cleanup Phase :: $k$ CAS operations}
+
+Each frozen location is updated based on the descriptor's final state:
+
+\begin{center}
+\texttt{CAS}$(x, \&D, 4)$ \\
+\texttt{CAS}$(y, \&D, 5)$ \\
+\texttt{CAS}$(z, \&D, 6)$
+\end{center}
+
+
+The number of CAS operations are:
+\begin{equation}
+k \text{ (freeze)} + 1 \text{ (decision)} + k \text{ (cleanup)} = 2k + 1
+\end{equation}
+
+For the example above, the result is 7 CAS operations.
+
+
+\subsection{Efficient MCAS: $(k + 1)$ CAS }
+
+
+The dominant source of this overhead is the cleanup phase, which requires rewriting each memory location after the outcome of the MCAS has been determined. Rachid et al. observe that this phase is conceptually unnecessary: once the global decision has been made, the final value of each location is already fixed at the logical level.
+
+
+The central insight of the Rachid et al. protocol is the following:
+
+\begin{center}
+\textit{Rather than restoring or overwriting memory locations after the decision, encode the final outcome in the descriptor and interpret each location's value through the descriptor.}
+\end{center}
+
+Consequently, a memory location that still references a descriptor is treated as logically containing either the old value or the new value, depending solely on the descriptor's finalized state.
+
+We illustrate the protocol using the same running example:
+\begin{center}
+$x = 1, \quad y = 2, \quad z = 3$
+\end{center}
+
+The intended atomic update is:
+\begin{center}
+$(x, y, z) : (1,2,3) \rightarrow (4,5,6)$
+\end{center}
+
+\paragraph{Phase 1: Freeze Phase :: $k$ CAS Operations}
+
+Each target location is atomically updated from its expected value to a pointer to a shared descriptor $D$:
+
+\begin{center}
+\texttt{CAS}$(x, 1, \&D)$ \\
+\texttt{CAS}$(y, 2, \&D)$ \\
+\texttt{CAS}$(z, 3, \&D)$
+\end{center}
+
+As in classical MCAS, each CAS simultaneously checks the expected value and marks the location as participating in the ongoing MCAS.
+
+\paragraph{Phase 2: Decision Phase :: 1 CAS Operation}
+
+The outcome of the operation is finalized by atomically updating the descriptor's status:
+
+\begin{center}
+\texttt{CAS}$(D.\text{status}, \text{ACTIVE}, \text{SUCCESS})$
+\end{center}
+
+This operation serves as the linearization point for the MCAS.
+
+\paragraph{Elimination of the Cleanup Phase}
+
+In contrast to classical MCAS, the efficient MCAS \cite{Guerraoui2013} performs no explicit cleanup CAS's.
+
+\begin{itemize}
+\item After the decision phase, memory locations may continue to physically reference the descriptor.
+\item When a thread reads such a location, it consults the descriptor:
+\begin{itemize}
+\item If the descriptor state is \texttt{SUCCESS}, the location is interpreted as holding the new value.
+\item If the state is \texttt{FAILED}, the location is interpreted as holding the original value.
+\end{itemize}
+\item As a result, the memory is logically updated without requiring immediate physical rewrites.
+\end{itemize}
+
+The total number of CAS operations is therefore:
+\begin{equation}
+k \text{ (freeze)} + 1 \text{ (decision)} = k + 1
+\end{equation}
+
+For the three-location example, this reduces the cost from 7 CAS operations to 4 CAS operations.
 
 \subsection{Conclusion}
-This paper introduces Zoo, a practical framework for verifying concurrent OCaml 5 programs, bridging
-real-world code and mechanized verification through ZooLang. It also contributes language improvements
-such as atomic record fields and a precise semantics for physical equality.
-Using Zoo, the authors verified a subset of the OCaml standard library, components of the \textsf{Eio} library, and a
-large portion of the \textsf{Saturn} lock-free data structure library, including stacks, queues, bags, and a work-stealing
-deque. These results demonstrate the practicality and scalability of the framework.
+MCAS is therefore included not as an isolated or exceptional case, but as a deliberate benchmark for expressiveness. Its correctness fundamentally depends on non-local linearization and helping-driven interference.

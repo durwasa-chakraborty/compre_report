@@ -1,87 +1,167 @@
-\chapter{Paper 5: Paper Title Here}
-\label{ch:paper5}
+\section{Cosmo: a concurrent separation logic for multicore OCaml \cite{cosmo2020}}
 
-\section*{Paper Information}
-\begin{itemize}
-    \item \textbf{Title:} Full title of the paper
-    \item \textbf{Authors:} Author names
-    \item \textbf{Venue:} Journal or Conference name
-    \item \textbf{Year:} Publication year
-    \item \textbf{Citation:} \cite{paper5}
-\end{itemize}
-
-\vspace{1cm}
-
-\section{Problem Statement and Motivation}
-\subsection{Research Problem}
-\textit{Add your analysis here...}
 
 \subsection{Motivation}
-\textit{Add your analysis here...}
+So far, we have established a framework for verifying concurrent programs under sequential consistency (SC). Under SC, the execution of a concurrent program can be understood as an interleaving of thread-local actions over a single, centralized shared memory, which makes reasoning about correctness comparatively straightforward.
 
-\section{Main Contributions}
-\begin{enumerate}
-    \item \textbf{Contribution 1:} Description
-    \item \textbf{Contribution 2:} Description
-    \item \textbf{Contribution 3:} Description
-\end{enumerate}
-\textit{Add detailed explanation...}
+However, real-world programming languages, such as OCaml, do not operate under sequential consistency. Instead, they adopt relaxed (or weak) memory models, where program executions are not necessarily representable as simple interleavings of thread actions. As a result, correctness reasoning must account for the semantics of the underlying memory model before addressing higher-level concurrent behavior.
 
-\section{Technical Approach}
-\subsection{Methodology}
-\textit{Add your analysis here...}
+ To reason about concurrent programs in such languages, one must first reason at
+ a low level, directly in terms of the memory model and its allowed reorderings
+ and visibility constraints. The terms weak memory model and relaxed memory model are used interchangeably, both referring to the fact that program execution is no longer constrained to behave as if all threads interact with a single, sequentially consistent memory. Instead, memory effects may be delayed, reordered, or observed differently by different threads.
 
-\subsection{Key Techniques}
-\textit{Add detailed technical analysis...}
+Once a framework for low-level reasoning is in place, it becomes possible to
+reason modularly about libraries of concurrent data structures, and subsequently
+about the high-level programs that rely on them.
 
-\subsection{Related Work}
-\textit{Add analysis of related work...}
+Fortunately, the Multicore OCaml memory model is relatively simple when compared to many industrial weak memory models. It distinguishes between two kinds of memory locations: atomic and nonatomic. Atomic locations come with well-defined synchronization guarantees, whereas nonatomic locations must be accessed in a data-race-free manner to ensure meaningful behavior.
 
-\section{Evaluation}
-\subsection{Experimental Setup}
-\textit{Add experimental setup details...}
+Reasoning about atomic locations follows a similar spirit to the approach discussed in earlier work on linearizability-based verification \cite{Vafeiadis2010}. In particular, when an operation performs a stateful change, it becomes possible to identify a clear correctness condition tied to the update. In contrast, stateless operations require the logic to retain and compose all relevant information to justify correctness.
 
-\subsection{Results}
-\textit{Add results summary...}
+Cosmo builds precisely such a framework: one that supports low-level reasoning about relaxed memory behaviors while enabling compositional, high-level reasoning about concurrent programs and data structures.
 
-\subsection{Result Analysis}
-\textit{Add analysis of results...}
+\subsection{Proposed Solution}
 
-\section{Strengths}
-\begin{itemize}
-    \item Strength 1
-    \item Strength 2
-    \item Strength 3
-\end{itemize}
-\textit{Add detailed assessment...}
 
-\section{Limitations}
-\begin{itemize}
-    \item Limitation 1
-    \item Limitation 2
-    \item Limitation 3
-\end{itemize}
-\textit{Add detailed assessment...}
 
-\section{Significance and Impact}
-\subsection{Significance to the Field}
-\textit{Add assessment...}
+\begin{figure}[t]
+\centering
+\begin{align*}
+a &\in \mathsf{Loc}_{\mathsf{NA}} \\
+A &\in \mathsf{Loc}_{\mathsf{AT}} \\
+t &\in \mathsf{Time} \;\triangleq\; \mathbb{Q} \cap [0,\infty) \\
+h &\in \mathsf{Hist} \;\triangleq\; \mathsf{Time} \xrightarrow{\mathit{fin}} \mathsf{Val} \\
+V, W, G &\in \mathsf{View} \;\triangleq\; \mathsf{Loc}_{\mathsf{NA}} \xrightarrow{\mathit{set}} \mathsf{Time} \\
+\sigma &\in \mathsf{Store} \;\triangleq\;
+  (\mathsf{Loc}_{\mathsf{NA}} \xrightarrow{\mathit{fin}} \mathsf{Hist})
+  \times
+  (\mathsf{Loc}_{\mathsf{AT}} \xrightarrow{\mathit{fin}} (\mathsf{Val} \times \mathsf{View}))
+\end{align*}
+\caption{Semantic objects: locations, time stamps, histories, views, and stores.}
+\label{fig:semantic-objects}
+\end{figure}
 
-\subsection{Practical Applications}
-\textit{Add discussion...}
+\begin{figure}[t]
+\centering
+\begin{mathpar}
 
-\subsection{Future Research Directions}
-\textit{Add discussion...}
+\infer[\textsc{Mem-NA-Alloc}]
+{
+  a \notin \mathrm{dom}\,\sigma
+  \quad
+  h = \{0 \mapsto v\}
+}
+{
+  \sigma; W \xrightarrow{\mathrm{alloc}(a,v)} \sigma[a \mapsto h]; W
+}
 
-\section{Summary}
-\textit{Add summary...}
+\infer[\textsc{Mem-AT-Alloc}]
+{
+  A \notin \mathrm{dom}\,\sigma
+}
+{
+  \sigma; W \xrightarrow{\mathrm{alloc}(A,v)} \sigma[A \mapsto (v,W)]; W
+}
 
-\section{Critical Questions}
-\begin{enumerate}
-    \item Question 1
-    \item Question 2
-    \item Question 3
-\end{enumerate}
-\textit{Add critical analysis...}
+\infer[\textsc{Mem-NA-Read}]
+{
+  h = \sigma(a)
+  \quad
+  t \in \mathrm{dom}\,h
+  \quad
+  W(a) \le t
+  \quad
+  v = h(t)
+}
+{
+  \sigma; W \xrightarrow{\mathrm{rd}(a,v)} \sigma; W
+}
 
-\newpage
+\infer[\textsc{Mem-AT-Read}]
+{
+  \sigma(A) = (v,V)
+}
+{
+  \sigma; W \xrightarrow{\mathrm{rd}(A,v)} \sigma; W \cup V
+}
+
+\infer[\textsc{Mem-NA-Write}]
+{
+  h = \sigma(a)
+  \quad
+  t \notin \mathrm{dom}\,h
+  \quad
+  W(a) < t
+  \quad
+  h' = h[t \mapsto v]
+}
+{
+  \sigma; W \xrightarrow{\mathrm{wr}(a,v)} \sigma[a \mapsto h']; W[a \mapsto t]
+}
+
+\infer[\textsc{Mem-AT-Write}]
+{
+  \sigma(A) = (v,V)
+  \quad
+  V' = W' = W \cup V
+}
+{
+  \sigma; W \xrightarrow{\mathrm{wr}(A,v')} \sigma[A \mapsto (v',V')]; W'
+}
+
+\infer[\textsc{Mem-AT-Read-Write}]
+{
+  \sigma(A) = (v,V)
+  \quad
+  V' = W' = W \cup V
+}
+{
+  \sigma; W \xrightarrow{\mathrm{rdwr}(A,v,v')} \sigma[A \mapsto (v',V')]; W'
+}
+
+\end{mathpar}
+\caption{Operational semantics for memory actions over nonatomic and atomic locations.}
+\label{fig:memory-semantics}
+\end{figure}
+
+
+
+
+Cosmo makes the underlying relaxed memory model explicit using a small collection of semantic objects: locations, timestamps, histories, views, and stores. Non-atomic locations are associated with histories (h) that record write events as timestamp–value pairs, while atomic locations store both a value and an associated view (V). A view is a mapping from non-atomic locations to timestamps and represents the latest writes that are visible. Each thread carries its own view (W), which records what that thread is currently allowed to observe. The store $\sigma$ aggregates these components, enabling the logic to precisely describe how writes are created, ordered, and observed, and to distinguish between operations that merely consult visibility and those that propagate it.
+
+For the purposes of this report, to maintain brevity and to pepper my understanding of the paper while building intuition, we adopt a Manhattan-style city-grid analogy. \footnote{The ``Manhattan'' grid analogy and a literature that uses \emph{atomics} quite frequently are purely coincidental, despite the historical temptation.}
+Each memory location is a building whose floors correspond to writes over time. The view (W) is the photograph of the city carried by the active thread: it may be incomplete and merely inspecting a building using this photograph does not update it. The view (V) is a photograph stored inside an atomic building, left behind by an atomic write and retrievable by other threads. Non-atomic reads and writes consult only (W), do not store or propagate photographs, and may therefore observe writes that are not globally latest but are nonetheless visible according to the thread’s current snapshot. Atomic operations, in contrast, merge (W) with (V), explicitly propagating visibility. Allowing such stale non-atomic reads is not a weakness of the model; it faithfully captures the fact that, under relaxed memory, threads only know what their current view (W) entitles them to know, and synchronization must be made explicit through atomic operations.
+
+\subsection*{BaseCosmo}
+
+The operational semantics of Cosmo describe how a program executes at the machine level: an expression (e) reduces to a new expression (e'), possibly interacting with the memory subsystem through a memory event and possibly spawning new threads. These semantics precisely track how memory locations, histories, timestamps, and views evolve during execution. However, while such a semantics tells us *what can happen*, it does not by itself tell us *how to reason compositionally* about programs, or how to prove that a program is safe or correct.
+
+Cosmo instantiates Iris, a generic framework for building concurrent separation logics. Iris provides the logical infrastructure, assertions, ghost state, invariants, weakest preconditions, and proof rules, while BaseCosmo supplies the Multicore OCaml–specific ingredients.
+
+At this point, the Manhattan city-grid analogy becomes useful again. In the operational model, each memory location is a building whose floors are writes, histories record all floors ever built, and views determine how tall each building appears to a given thread. BaseCosmo’s role is to lift this concrete picture into logic. Instead of directly manipulating buildings and photographs, the logic reasons about \emph{ownership} and \emph{knowledge}. Fractional permissions allow ownership of buildings to be split across threads, while a global view invariant ensures that every thread’s snapshot (W) remains consistent with the actual city skyline represented by the store. In other words, BaseCosmo ensures that the logical “photographs” carried by proofs faithfully correspond to the operational photographs carried by threads.
+
+To make this precise, BaseCosmo introduces assertions such as points-to assertions and a valid-view assertion. Points-to assertions describe ownership and knowledge of individual memory locations both nonatomic and atomic, while the valid-view assertion captures the global invariant relating thread views to the store. Atomic points-to assertions additionally account for the fact that atomic locations store a view (V), which can later be merged into a thread’s view (W), explicitly propagating visibility.
+
+Hoare triples are the interface through which all of this reasoning is exposed. A triple ({P}, (e, W), {$\Phi$}) states that if the precondition (P) holds, then executing expression (e) in a thread with view (W) is safe, and if it terminates, it produces a value and an updated view satisfying the postcondition ($\Phi$). Iris supplies the generic machinery for weakest preconditions, framing, and invariants, while BaseCosmo provides the memory-specific axioms that explain how reads, writes, allocations, and atomic operations affect ownership and views.
+
+
+
+\subsection*{A Higher Level Logic : Cosmo}
+
+While BaseCosmo provides a faithful translation of the Multicore OCaml operational semantics, it remains intentionally low-level. In particular, it exposes details such as histories, timestamps, and per-thread views directly in assertions. This precision is useful for soundness, but it makes reasoning cumbersome: even in data-race-free code, a nonatomic location appears to store an entire history rather than a single value, and every Hoare triple must explicitly mention the current thread’s view (W).
+
+Finally, all the preamble data takes place. Its goal is not to change the underlying semantics, but to provide a more convenient interface for reasoning. On top of BaseCosmo, Cosmo offers a higher-level logic in which nonatomic locations can again be reasoned about as if they store a single value, provided the program is data-race free while still remaining sound with respect to relaxed memory.
+
+Back to our analogy - at the BaseCosmo level, reasoning involves explicit references to building histories and photographs:  which floors exist, which timestamps label them, and which buildings are visible in a thread’s snapshot. Cosmo abstracts over these details. From the perspective of Cosmo, a nonatomic building simply “contains a value,” meaning that the most recent write to that building is known to the current thread.
+
+Instead of asserting a BaseCosmo proposition directly, a Cosmo assertion denotes a function from views to BaseCosmo assertions. Subjective assertions, such as “this thread has seen view (V),” depend on the current thread’s snapshot and therefore cannot be shared. Objective assertions, on the other hand, are independent of any particular thread’s view and can be placed inside invariants. This distinction explains why nonatomic points-to assertions in Cosmo are necessarily subjective: they assert not only that a value exists, but that the current thread is aware of the corresponding write.
+
+Iris continues to play a central role in this construction. It provides the general machinery for weakest preconditions, Hoare triples, framing, and invariants, while Cosmo refines the assertion language to separate subjective, view-dependent knowledge from objective, shareable facts. Hoare triples in Cosmo therefore look familiar: a precondition (P) describes the resources required to execute an expression (e), and the postcondition \(\Phi\) describes the resources obtained after execution. What changes is that Cosmo carefully controls how view-dependent information flows through these triples, ensuring monotonicity with respect to view growth and preserving soundness under relaxed memory.
+
+
+
+\subsection{Conclusion}
+
+This paper introduced Cosmo, a concurrent separation logic that enables formal reasoning about Multicore OCaml under its relaxed memory model. Unlike traditional program logics that assume sequential consistency, Cosmo is designed to reason directly about the realities of modern multicore execution, including delayed visibility, partial views, and explicit synchronization.
+
+The broader goal of this paper was also to understand how the verification of concurrent programs evolve as we move closer to real systems. While Cosmo significantly advances the state of the art by enabling formal reasoning about Multicore OCaml under a relaxed memory model, it is not the end of the story. As indicated by the authors, several important directions remain open, including support for arrays, richer synchronization primitives such as the Domain API, and full verification of sophisticated lock-free data structures. More fundamentally, reasoning about programs that intentionally exploit data races on nonatomic locations remains an open challenge.

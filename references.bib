@@ -74,3 +74,40 @@ articleno = {59},
 numpages = {28},
 keywords = {Concurrent Algorithms, Iris, OCaml 5, Rocq, Separation Logic, Verification}
 }
+
+@article{cosmo2020,
+author = {M\'{e}vel, Glen and Jourdan, Jacques-Henri and Pottier, Fran\c{c}ois},
+title = {Cosmo: a concurrent separation logic for multicore OCaml},
+year = 2020,
+issue_date = {August 2020},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+volume = 4,
+number = {ICFP},
+url = {https://doi.org/10.1145/3408978},
+doi = {10.1145/3408978},
+abstract = {Multicore OCaml extends OCaml with support for shared-memory concurrency. It is equipped with a weak memory model, for which an operational semantics has been published. This begs the question: what reasoning rules can one rely upon while writing or verifying Multicore OCaml code? To answer it, we instantiate Iris, a modern descendant of Concurrent Separation Logic, for Multicore OCaml. This yields a low-level program logic whose reasoning rules expose the details of the memory model. On top of it, we build a higher-level logic, Cosmo, which trades off some expressive power in return for a simple set of reasoning rules that allow accessing nonatomic locations in a data-race-free manner, exploiting the sequentially-consistent behavior of atomic locations, and exploiting the release/acquire behavior of atomic locations. Cosmo allows both low-level reasoning, where the details of the Multicore OCaml memory model are apparent, and high-level reasoning, which is independent of this memory model. We illustrate this claim via a number of case studies: we verify several implementations of locks with respect to a classic, memory-model-independent specification. Thus, a coarse-grained application that uses locks as the sole means of synchronization can be verified in the Concurrent-Separation-Logic fragment of Cosmo, without any knowledge of the weak memory model.},
+journal = {Proc. ACM Program. Lang.},
+month = aug,
+articleno = 96,
+numpages = 29,
+keywords = {weak memory, separation logic, program verification, concurrency}
+}
+
+@inproceedings{reagent2012,
+author = {Turon, Aaron},
+title = {Reagents: expressing and composing fine-grained concurrency},
+year = {2012},
+isbn = {9781450312059},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+url = {https://doi.org/10.1145/2254064.2254084},
+doi = {10.1145/2254064.2254084},
+abstract = {Efficient communication and synchronization is crucial for fine grained parallelism. Libraries providing such features, while indispensable, are difficult to write, and often cannot be tailored or composed to meet the needs of specific users. We introduce reagents, a set of combinators for concisely expressing concurrency algorithms. Reagents scale as well as their hand-coded counterparts, while providing the composability existing libraries lack.},
+booktitle = {Proceedings of the 33rd ACM SIGPLAN Conference on Programming Language Design and Implementation},
+pages = {157–168},
+numpages = {12},
+keywords = {nonblocking algorithms, monads, fine-grained concurrency, compositional concurrency, arrows},
+location = {Beijing, China},
+series = {PLDI '12}
+}

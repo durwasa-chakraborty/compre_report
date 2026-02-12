@@ -9,6 +9,8 @@
     "Dennard1974"
     "Vafeiadis2010"
     "Guerraoui2013"
-    "zoo2026"))
+    "zoo2026"
+    "cosmo2020"
+    "reagent2012"))
  '(or :bibtex :latex))
 

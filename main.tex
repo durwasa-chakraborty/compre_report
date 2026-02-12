@@ -10,14 +10,13 @@
 \usepackage{listings}
 \usepackage{xcolor}
 \usepackage{tikz}
+\usepackage{mathpartir}
 
 % ----------------------------
 % Metadata (required by ACM)
 % ----------------------------
 \title{On the Limits of Automated Linearizability Verification for Modern Concurrency Patterns}
 {\titlenote{The use of a prepositional opening, often reads as non-assertive. However, this is deliberate: the document is written in reported speech, and this stylistic choice is adopted from Adam Smith’s \emph{The Wealth of Nations}.}}
-
-
 \author{Durwasa Chakraborty}
 \affiliation{
   \institution{Indian Institute of Technology Madras}
@@ -49,24 +48,24 @@
 % Abstract
 % ----------------------------
 \begin{abstract}
-  Modern multicore systems operate under relaxed memory models, where the
-  observable behavior of concurrent programs may diverge significantly from
-  sequentially consistent executions. While many existing verification techniques
-  for concurrent data structures assume sequential consistency, practical systems
-  and language runtimes expose weaker memory semantics, thereby complicating
-  formal reasoning about correctness.
+  The transition to multicore architectures has made concurrent
+programming a necessity rather than an optimization. While
+linearizability provides a precise correctness condition for
+concurrent objects, automatically verifying fine-grained lock-free algorithms
+remains challenging due to interleavings, complex atomic
+primitives, and weak memory behavior.
 
-  This report investigates the problem of verifying correctness properties of
-  concurrent algorithms under different memory models, with particular emphasis on
-  atomicity, linearizability, and progress guarantees. Rather than treating
-  verification as a secondary concern following algorithm design, we position it
-  as the primary challenge in reasoning about modern concurrent systems.
-
-  As a concrete vehicle for this study, we examine multi-word compare-and-swap
-  (hereinafter \emph{MCAS}) \cite{Harris2002} algorithms, which serve as a representative and
-  demanding case study for modern verification techniques. We survey existing
-  verification methodologies and tools, and identify open challenges in reasoning
-  about linearizability under language-level memory models.
+This report examines the progression from formal specifications
+of concurrent correctness, to automated reasoning techniques,
+to mechanized verification of realistic lock-free data structures,
+and finally to abstractions that support compositional
+concurrency under relaxed memory models. Through this layered
+study, we highlight the central tension between expressive
+concurrent algorithms and the rigor required to prove them
+correct. The overarching theme is that scalable concurrency
+demands not only sophisticated synchronization primitives, but
+verification frameworks and abstractions capable of reasoning
+across semantic, algorithmic, and memory-model boundaries.
 
 
 \end{abstract}
@@ -83,13 +82,9 @@
 \input{sections/03_paper_2}
 \input{sections/04_paper_3}
 \input{sections/05_paper_4}
+\input{sections/06_paper_5}
+\input{sections/07_paper_6}
 
-\section{Related Work}
-% Zoo, RELINCHE, Cosmo, etc.
-
-\section{Discussion and Open Problems}
-
-\section{Conclusion}
 
 \bibliographystyle{plain}
 \bibliography{./references}

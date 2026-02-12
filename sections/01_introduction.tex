@@ -19,16 +19,36 @@ testing methodologies that involves an array of testing suites inadequate.
 Establishing correctness therefore requires formal reasoning frameworks capable
 of expressing and verifying properties such as atomicity, linearizability, and progress.
 
-The remainder of this report is organized as follows. Section 2 presents the
-formal definition of linearizability\cite{HerlihyWing1990} . Section 3 surveys automated and
-semi-automated approaches to linearizability verification, with particular
-emphasis on mechanically assisted techniques.~\cite{Vafeiadis2010}.Building on
-this background, Section 4 investigates linearizability in the
-context of a non-trivial concurrent data structure, namely \emph{kCAS}.\cite{Guerraoui2013}
-This section highlights why traditional linearization-point-based reasoning
-becomes inadequate in these settings.To address these challenges, we then discuss
-modern reasoning frameworks based on concurrent separation logic.
-In particular, we examine recent advances such as Zoo, which provides a
-compositional framework for verifying fine-grained concurrent algorithms,
-as well as Cosmo, a concurrent separation logic tailored to the multicore
-OCaml memory model. TODO.
+This report is organized as follows. We begin by recalling the formal
+definition of linearizability~\cite{HerlihyWing1990} in \S2 seminal work by Heerlihy and Wing, the canonical
+correctness condition for concurrent objects.
+
+\S3 surveys automated approaches to linearizability, focusing on
+the work of Victor Vafeiadis~\cite{Vafeiadis2010}, which demonstrates how
+linearization points and interference reasoning can be
+mechanized.
+
+We then study Zoo~\cite{zoo2026},\S4, by Allain Cl\'{e}ment and Gabriel Scherer, a framework for verifying concurrent
+OCaml5 programs using separation logic. Zoo embeds a core fragment of
+OCaml into Rocq and enables machine-checked proofs of fine-grained
+concurrent data structures. To understand the practical implications of
+such verification, we examine a data structure based on multi-word
+compare-and-swap (kCAS)\cite{Guerraoui2013} by Rachid Guerraoui, Alex Kogan, Virendra J. Marathe and Igor Zablotchi, \S5 originally proposed in practical form by
+Harris and Fraser~\cite{Harris2002}. Unlike single-word CAS, kCAS
+supports atomic updates to multiple memory locations.
+
+Zoo \cite{zoo2026} assumes sequential consistency, whereas real-world Multicore OCaml
+operates under a relaxed memory model. To address this discrepancy, we
+study Cosmo~\cite{cosmo2020}, \S6, by M\'{e}vel, Glen Jourdan, Jacques-Henri and Fran\c{c}ois Pottier, a concurrent separation logic tailored to
+OCaml’s weak memory semantics. Cosmo reconciles high-level reasoning
+principles with low-level memory behavior, exposing the additional
+subtleties introduced by relaxed memory.
+
+Finally, we consider Reagents~\cite{reagent2012}, \S7, by Aaron Turon, which propose a
+transactional abstraction for composing fine-grained concurrent
+interactions. Reagents structure lock-free algorithms around explicit
+commit boundaries, offering a compositional model that resembles
+transactional memory while retaining scalability. Through these successive acts, ie. from specification, to automation, to mechanization, to
+memory-model awareness, and ultimately to compositional concurrency
+the report explores how modern verification techniques engage with
+increasingly expressive concurrent programming paradigms.
