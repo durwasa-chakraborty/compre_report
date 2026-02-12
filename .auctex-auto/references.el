@@ -11,6 +11,7 @@
     "Guerraoui2013"
     "zoo2026"
     "cosmo2020"
-    "reagent2012"))
+    "reagent2012"
+    "turonthesis"))
  '(or :bibtex :latex))
 

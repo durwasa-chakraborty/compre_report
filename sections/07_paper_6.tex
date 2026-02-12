@@ -1,7 +1,7 @@
-\section{ Reagents: expressing and composing fine-grained concurrency \cite{reagent2012}}
+\section{ Reagents: expressing and composing fine-grained concurrency \cite{reagent2012}\cite{turonthesis}}
 
 \subsection{Motivation}
-Amidst a sea of non-blocking progress guarantees, wait-free algorithms offer the strongest promise, every thread completes in a bounded number of steps regardless of interference, but are notoriously difficult to design and reason about. At the other end, obstruction-free algorithms guarantee progress only in the absence of contention, making them easier to construct but weaker in practice. Lock-free data structures occupy the practical sweet spot: they ensure system-wide progress (at least one thread completes) while remaining implementable and scalable. Modern libraries such as \texttt{java.util.concurrent} provide highly optimized lock-free stacks, queues, and maps, yet these structures are not \emph{composable}. For instance, performing \texttt{x = A.pop(); B.push(x);} is not atomic; between the two calls, another thread may observe inconsistent intermediate state. Extending the library with ad hoc methods like \texttt{popAndPush} leads to API explosion and violates a key abstraction principle: libraries should expose composable building blocks, not bespoke combinations. In traditional lock-free programming, the developer must explicitly orchestrate CAS loops, retries, and memory interactions, thereby controlling the low-level protocol. Reagents address this gap by introducing a new execution model. A reagent, written $\texttt{Reagent}[A,B]$, is a \emph{description} of a concurrent atomic interaction: given input $A$, it performs coordinated memory updates and synchronization to produce $B$, while abstracting away CAS retries, transient failures, and commit protocols. By treating atomic operations as first-class composable values, reagents allow developers to declaratively specify interactions while the runtime enforces lock-free coordination. In doing so, they reconcile scalability with composability, avoiding global locks, heavyweight transactional memory, and abstraction-breaking APIs.
+Amidst a sea of non-blocking progress guarantees, wait-free algorithms offer the strongest promise, every thread completes in a bounded number of steps regardless of interference, but are difficult to design and reason about. At the other end, obstruction-free algorithms guarantee progress only in the absence of contention, making them easier to construct but weaker in practice. Lock-free data structures occupy the practical sweet spot: they ensure system-wide progress (at least one thread completes) while remaining implementable and scalable. Modern libraries such as \texttt{java.util.concurrent} provide highly optimized lock-free stacks, queues, and maps, yet these structures are not \emph{composable}. For instance, performing \texttt{x = A.pop(); B.push(x);} is not atomic; between the two calls, another thread may observe inconsistent intermediate state. Extending the library with ad hoc methods like \texttt{popAndPush} leads to API explosion and violates a key abstraction principle: libraries should expose composable building blocks, not bespoke combinations. In traditional lock-free programming, the developer must explicitly orchestrate CAS loops, retries, and memory interactions, thereby controlling the low-level protocol. Reagents address this gap by introducing a new execution model. A reagent, written $\texttt{Reagent}[A,B]$, is a \emph{description} of a concurrent atomic interaction: given input $A$, it performs coordinated memory updates and synchronization to produce $B$, while abstracting away CAS retries, transient failures, and commit protocols. By treating atomic operations as first-class composable values, reagents allow developers to declaratively specify interactions while the runtime enforces lock-free coordination. In doing so, they reconcile scalability with composability, avoiding global locks, heavyweight transactional memory, and abstraction-breaking APIs.
 
 \subsection{Proposed Solution}
 
@@ -25,10 +25,7 @@ interactions from the shared-state world to be composed in a manner similar
 to communication events in the message-passing world.
 
 \begin{figure}[t]
-\begin{lstlisting}[language=Go,
-  basicstyle=\small\ttfamily,
-  breaklines=true,
-  columns=flexible]
+\begin{lstlisting}[language=Go, frame=single, framesep=5pt]
 ch := make(chan int)
 go func() {
   ch <- 10  // send
@@ -47,10 +44,7 @@ simultaneously, without exposing shared-memory races. Go also provides
 selective communication through the \lstinline{select} statement:
 
 \begin{figure}[t]
-\begin{lstlisting}[language=Go,
-  basicstyle=\small\ttfamily,
-  breaklines=true,
-  columns=flexible]
+\begin{lstlisting}[language=Go, frame=single, framesep=5pt]
 select {
 case x := <-ch1:
   fmt.Println("Received from ch1:", x)
@@ -73,7 +67,7 @@ Reagents introduce a small but expressive algebra for composing concurrent atomi
 
 \subsection{Implementation Overview}
 
-Reagents execute via a conceptually two-phase protocol~\cite{turon2012thesis}.
+Reagents execute via a conceptually two-phase protocol~\cite{turonthesis}.
 When a reagent is invoked (via the \texttt{!} method), it attempts to
 \emph{react}. Reaction consists of (1) a \emph{collection phase}, during which
 the runtime builds up a \texttt{Reaction} object containing the atomic updates
@@ -88,115 +82,62 @@ external state changes. By contrast, a failure during the commit phase is a
 \emph{transient failure}: the reaction was valid, but interference from another
 thread prevented atomic commitment. In this case, the system retries.
 
-Internally, outcomes are represented as:
+\subsection{Reagent Syntax and Semantics}
+The Reagents library provides a distinct syntax for expressing fine-grained concurrency, centered around the composition of atomic transactions. A Reagent $R[A,B]$ is not a simple function from $A$ to $B$, but a description of an atomic transaction that transforms an input of type $A$ into a result of type $B$.
+
+The core operation for executing a reagent is the exclamation mark (\texttt{!}), which initiates the transaction:
+\begin{equation}
+    \texttt{result = reagent ! input}
+\end{equation}
+This invocation triggers the aforementioned two-phase process: \textit{accumulation}, where the transaction's effects (such as Compare-and-Swap operations) are collected into a \texttt{Reaction} object, and \textit{commit}, where these effects are atomically applied.
+
+Reagents are composed using combinators that can be thought of as bind operations. The sequencing combinator (\texttt{>>}) chains reagents together:
+\begin{equation}
+    R_{1} \gg R_{2}
+\end{equation}
+This expression implies a dependency: ``Attempt $R_{1}$; if successful, use its result as input for $R_{2}$. If either fails, the entire transaction aborts.''
+
+Internally, this behavior is implemented via the \texttt{tryReact} method:
+\begin{lstlisting}[language=Scala, style=Scala, mathescape=true]
+def tryReact(a: A, rx: Reaction, offer: Offer[B]): Any
+\end{lstlisting}
+Here, \texttt{rx} represents the accumulated state of the transaction so far---the pending CAS operations and message sends.
+
+\subsection{The Necessity of Continuation-Passing Style (CPS)}
+The sequential composition $R_{1} \gg R_{2}$ presents a fundamental challenge: $R_{1}$ cannot simply return a value to $R_{2}$ because the transaction is not yet complete. The system must maintain the ability to abort, retry, or block the entire chain based on future conditions. This requirement necessitates \textit{Continuation-Passing Style (CPS)}.
+
+\subsubsection{Inverting Control Flow}
+In standard direct-style programming, a function returns a result to its caller. In CPS, a function receives the ``rest of the computation'' (the continuation) as an argument and decides how to proceed. This is often summarized by the Hollywood Principle: ``Don't call us, we'll call you.''
 
 \begin{figure}[t]
-\centering
-\begin{minipage}{0.9\linewidth}
-\begin{verbatim}
-type 'a result =
-  | Block        (* permanent failure *)
-  | Retry        (* transient failure *)
-  | Done of 'a   (* successful commit *)
+\begin{lstlisting}[language=Scala, style=Scala, mathescape=true]
+// The tryReact function transforms an input and a continuation
+// into either a new continuation or a failure.
+//
+// Syntax Mapping:
+// 1. $\times$ becomes (A, B): In Scala, a product type is a tuple/argument list.
+// 2. $\to$ becomes =>: The function arrow in Scala is =>.
+// 3. $\lor$ becomes |: In Scala 3, A | B is a Union Type, mapping "Success OR Failure".
 
-type ('a,'b) t = {
-  try_react      : 'a -> reaction -> offer option -> 'b result;
-  compose        : 'r. ('b,'r) t -> ('a,'r) t;
-  always_commits : bool;
-  may_sync       : bool;
-}
-\end{verbatim}
-\end{minipage}
-\caption{Core internal representation of reagents (adapted from~\cite{turon2012thesis}).}
-\label{fig:reagent-core}
+type TryReact = (A, CurrentContinuation) => NewContinuation | Failure
+\end{lstlisting}
+\caption{Conceptual type signature of TryReact}
+\label{fig:type-tryreact}
 \end{figure}
 
-The \texttt{try\_react} method attempts to extend the current reaction; it may
-complete (\texttt{Done}), block permanently (\texttt{Block}), or signal
-interference (\texttt{Retry}). The \texttt{compose} field implements the
-algebraic combinators, while \texttt{always\_commits} and \texttt{may\_sync}
-provide static hints for optimization.
+The \texttt{tryReact} method embodies this principle. The \texttt{rx} argument effectively serves as the continuation. Instead of computing a final result, a reagent transforms the current continuation:
 
-Reagents are implemented in continuation-passing style (CPS). Rather than
-represent sequencing as a separate structural node, each reagent carries its
-own continuation—a reagent describing the remainder of the computation. The
-initial continuation is \texttt{Commit}, which transitions from building a
-\texttt{Reaction} to actually committing it. The sequencing combinator
-therefore merely wires continuations together.
+This allows the library to build up the transaction step-by-step without committing any side effects until the entire chain is ready.
 
-CPS can be illustrated in Racket:
+\subsubsection{Explicit Failure and Retry}
+CPS is structurally required to handle the non-deterministic nature of concurrent programming. A reagent does not just succeed or fail; it has three possible outcomes:
+\begin{enumerate}
+    \item \textbf{Success:} The reagent extends the continuation with its operations and passes control to the next reagent.
+    \item \textbf{Transient Failure (Retry):} Interference occurred (e.g., a CAS failed). The continuation is discarded, and the transaction restarts.
+    \item \textbf{Permanent Failure (Block):} The operation cannot proceed (e.g., waiting on an empty queue). The thread suspends execution.
+\end{enumerate}
 
-\begin{figure}[t]
-\centering
-\begin{minipage}{0.9\linewidth}
-\begin{verbatim}
-(define (safe-div x y k)
-  (if (= y 0)
-      (k 'error)
-      (k (/ x y))))
-\end{verbatim}
-\caption{A simple continuation-passing style example.}
-\label{fig:cps}
-\end{minipage}
-\end{figure}
-
-Here, instead of returning a value, \texttt{safe-div} invokes continuation
-\texttt{k}. Control flow is made explicit. Similarly, in reagents,
-continuations encode ``what to do next'' after a reaction step, enabling
-backtracking choice and message passing without additional runtime constructs.
-
-The commit phase requires atomically applying multiple CAS operations when a
-reaction spans multiple locations. This is implemented as a $k$-CAS protocol.
-When hardware transactional memory (HTM) is available, it can accelerate this
-phase; otherwise, a descriptor-based software multi-word CAS is used. In the
-common case where a reagent performs only a single visible CAS, the runtime
-optimizes by executing it directly, avoiding the overhead of constructing a
-full \texttt{Reaction} object.
-
-Overall, the internal structure can be summarized as:
-
-\begin{verbatim}
-build reaction  →  Block | Retry | proceed
-proceed         →  k-CAS commit
-commit result   →  Done | Retry
-\end{verbatim}
-
-Collection determines feasibility; commit ensures atomicity; CPS enables
-compositional control flow. Together, these mechanisms allow reagents to
-support composable lock-free interactions without global locking or
-heavyweight STM.
-
-\begin{figure}[t]
-\centering
-\begin{tikzpicture}[scale=0.8]
-  % Main timeline
-  \draw[ultra thick] (0.5,0) -- (8.5,0);
-
-  % Tick marks
-  \foreach \x in {0.5, 4.5, 8.5} {
-    \draw (\x, -0.1) -- (\x, 0.1);
-  }
-
-  % Phase labels (positioned above timeline)
-  \node[align=center, font=\bfseries\small] at (2.5, 0.5) {Phase 1};
-  \node[align=center, font=\tiny] at (2.5, 0.15) {Accumulate CASes};
-
-  \node[align=center, font=\bfseries\small] at (6.5, 0.5) {Phase 2};
-  \node[align=center, font=\tiny] at (6.5, 0.15) {Attempt k-CAS};
-
-  % Persistent failure: just a dot on timeline
-  \fill[red!70] (0.5, 0) circle (0.08);
-  \node[anchor=north, font=\tiny] at (0.5, -0.35) {Persistent failure};
-
-  % Transient failure arc (below)
-  \draw[thick, <-, bend right=28] (1.2, -0.5) to (8, -0.5);
-  \node[anchor=north, font=\tiny] at (4.5, -0.7) {Transient failure};
-\end{tikzpicture}
-\caption{Two-phase CAS protocol: persistent failures at start prevent completion;
-transient failures allow retry.}
-\label{fig:cas-phases}
-\end{figure}
-
+By using CPS, the Reagents library treats the execution path as a first-class value that can be suspended, discarded, or re-executed. This explicit management of the continuation allows for the composition of complex, lock-free synchronization primitives---such as the \texttt{kCAS} protocol---that would be impossible to express using standard return values.
 
 \subsection{Conclusion}
 Reagents suggest a transactional abstraction for lock-free data structures with explicit commit boundaries. Such structure may significantly simplify reasoning about linearization points and compositional correctness. Developing a formal operational semantics could therefore provide a foundation for automated linearizability verification in the presence of both shared-state and message-passing interactions.
