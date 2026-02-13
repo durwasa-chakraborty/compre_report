@@ -35,6 +35,8 @@
     '("footnotetextcopyrightpermission" 1)
     "Bbbk")
    (LaTeX-add-bibliographies
-    "./references"))
+    "./references")
+   (LaTeX-add-listings-lstdefinestyles
+    "Scala"))
  :latex)
 
