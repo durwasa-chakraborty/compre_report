@@ -132,7 +132,10 @@ implementation-specific choices about block allocation and layout.
 
 \begin{minipage}{0.45\linewidth}
 \begin{verbatim}
-(* Before optimization *) let x = Some 0 in let y = x in x == y (* true *)
+(* Before optimization *)
+let x = Some 0 in
+let y = x in
+x == y (* true *)
 \end{verbatim}
 \end{minipage}
 &
@@ -146,8 +149,10 @@ x ----\textbackslash \\ > [Some | 0] (B1) \\ y ----/
 
 \begin{minipage}{0.45\linewidth}
 \begin{verbatim}
-(* After compiler unsharing *) let x = Some 0 in let y = Some 0 in x == y (*
- false *)
+(* After compiler unsharing *)
+let x = Some 0 in
+let y = Some 0 in
+x == y (*false *)
 \end{verbatim}
 \end{minipage}
 &
