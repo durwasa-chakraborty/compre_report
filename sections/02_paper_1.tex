@@ -1,94 +1,280 @@
-\section{Linearizability: A Correctness Condition for Concurrent Objects\cite{HerlihyWing1990} }
+\section{Linearizability: A Correctness Condition for Concurrent Objects\cite{HerlihyWing1990} }\label{sec:linearizability}
 
 \subsection{Motivation}
 
 Concurrency is now a given rather than a design choice, and shared
 \emph{concurrent objects} are unavoidable in system construction. The remaining
 challenge is no longer how to exploit concurrency, but how to ascribe precise
-meaning to object behavior in the presence of arbitrary interleavings. The challenge is how to
-exploit concurrency and assign precise meaning to object behavior in the
-presence of interleavings, that may grow astronomically. In the battle between
-performance and correctness, the canons of sound engineering practices always
-should prioritize correctness, thus motivating the study of correctness conditions
-for concurrent objects.
+meaning to object behavior in the presence of arbitrary interleavings. The
+challenge is how to exploit concurrency and assign precise meaning to object
+behavior in the presence of interleavings, that may grow astronomically. In the
+battle between performance and correctness, the canons of sound engineering
+practices always should prioritize correctness, thus motivating the study of
+correctness conditions for concurrent objects.
 
-The fundamental question concurrency raises is: what is the intended behavior of an
-object when its operations are interleaved in many possible ways? If thread~A
+The fundamental question concurrency raises is: what is the intended behavior of
+an object when its operations are interleaved in many possible ways? If thread~A
 performs $m$ operations and thread~B performs $n$ operations, the number of
-possible interleavings grows combinatorially, on the order of
-$\binom{m+n}{m}$. Whether such executions are correct depends entirely on the
-object’s specification.
+possible interleavings grows combinatorially, on the order of $\binom{m+n}{m}$.
+Whether such executions are correct depends on the object’s specification.
 
-For example, a queue is not tied to a single behavior; instead it comes with a
-specification that describes which input/output traces are allowed. In a classic FIFO,
-queue, if elements are enqueued as $\langle 1,2,3\rangle$, every legal execution must
-dequeue them as verbatim $\langle 1,2,3\rangle$. In contrast, large-scale asynchronous
-systems such Kafka-based queues typically adopt a different delivery specification(s).
-For example \emph{at-least-once delivery}, in such a system producing $\langle 1,2,3\rangle$
-may legally result in consumer-visible traces like $\langle 1,1,1,2,3\rangle$ or multiple
-replays of $\langle 1,2,3\rangle$  $\langle 1,2,3\rangle$. Correctness, therefore, is
-a function of the chosen delivery specification.
 
-This leads to a central question: who defines correctness, and how can it
-be verified? Linearizability answers this question by providing a precise and
+The term "FIFO queue" alone is imprecise. A proper specification formalizes the
+data structure's behavior by explicitly characterizing the set of valid
+input/output traces, rather than relying on informal descriptions. In a classic
+FIFO, queue, if elements are enqueued as $\langle 1,2,3\rangle$, every legal
+execution must dequeue them as verbatim $\langle 1,2,3\rangle$. In contrast,
+large-scale asynchronous systems such Kafka-based queues typically adopt a
+different delivery specification(s). For example \emph{at-least-once delivery},
+in such a system producing $\langle 1,2,3\rangle$ may legally result in
+consumer-visible traces like $\langle 1,1,1,2,3\rangle$ or multiple replays of
+$\langle 1,2,3\rangle$ $\langle 1,2,3\rangle$. Correctness, therefore, is a
+function of the chosen delivery specification.
+
+This leads to a central question: who defines correctness, and how can it be
+verified? Linearizability answers this question by providing a precise and
 compositional correctness condition that allows programmers to reason about
 concurrent executions using familiar sequential semantics.
 
 \subsection{Definition of Linearizability}
 
-A history $H$ is \emph{linearizable} if it can be extended to a history $H'$ such
-that:
+A \emph{history} $(H)$ is a finite sequence of invocation and response events of
+operations executed by a set of processes (or threads).
+
+\begin{itemize}
+  \item An \emph{invocation event} has the form $\mathsf{inv}\langle p,
+    \mathit{op}, x \rangle $, meaning process $(p)$ invokes operation
+    $(\mathit{op})$ with argument $(x)$.
+
+  \item A \emph{response event} has the form $\mathsf{res}\langle p,
+    \mathit{op}, y \rangle $, meaning process $(p)$ returns from operation
+    $(\mathit{op})$ with result $(y)$.
+\end{itemize}
+
+A history need not be well-matched: it may contain \emph{pending invocations}
+(i.e., invocations without corresponding responses).
+
+An operation is \emph{complete} in $(H)$ if its invocation is followed by a
+matching response in $(H)$.
+
+A history $(H')$ is an \emph{extension} of a history $(H)$ if:
+
+\begin{enumerate}
+  \item $(H)$ is a prefix of $(H')$, and
+
+  \item $(H')$ is obtained from $(H)$ by appending zero or more response events
+    corresponding to pending invocations in $(H)$.
+\end{enumerate}
+
+Thus, extending a history may complete some pending operations or complete none
+at all (a zero extension), but it does not introduce any new invocations.
+
+
+A history $H$ is \emph{linearizable} if it can be extended to a history $H'$
+such that:
 \begin{enumerate}
   \item $\mathrm{complete}(H')$ is equivalent to a legal sequential history $S$,
   \item the real-time order is preserved, i.e., $<_H \subseteq <_S$.
 \end{enumerate}
 
-Here, $\mathrm{complete}(H')$ denotes the maximal subsequence of $H'$ obtained by
-removing pending invocations. Linearizability permits nondeterminism: multiple
-sequential histories may justify the same concurrent execution, provided that at
-least one such history exists.
 
+Here, $\mathrm{complete}(H')$ denotes the maximal subsequence of $H'$ obtained
+by removing pending invocations. Linearizability permits nondeterminism:
+multiple sequential histories may justify the same concurrent execution.
 
 
 
 \subsection{Proposed Solution}
+\begin{figure}[t]
+  \centering
+  \begin{tabular}{l}
+    \hline \texttt{Enq} $= \mathbf{proc}$ $(q: \text{queue}, x: \text{item})$
+    \\ \quad $i: \text{int} := \mathtt{INC}(q.\mathit{back})$ \quad \% Allocate
+    a new slot. \\ \quad $\mathtt{STORE}(q.\mathit{items}[i], x)$ \quad \% Fill
+    it. \\ $\mathbf{end}$ \texttt{Enq} \\ \\ \texttt{Deq} $= \mathbf{proc}$ $(q:
+    \text{queue})$ $\mathbf{returns}$ $(\text{item})$ \\ \quad $\mathbf{while}$
+    \texttt{true} $\mathbf{do}$ \\ \quad \quad $\mathit{range}: \text{int} :=
+    \mathtt{READ}(q.\mathit{back}) - 1$ \\ \quad \quad $\mathbf{for}$ $i:
+    \text{int}$ $\mathbf{in}$ $1 \ldots \mathit{range}$ $\mathbf{do}$ \\ \quad
+    \quad \quad $x: \text{item} := \mathtt{SWAP}(q.\mathit{items}[i],
+    \mathbf{null})$ \\ \quad \quad \quad $\mathbf{if}$ $x \neq \mathbf{null}$
+    $\mathbf{then}$ $\mathbf{return}(x)$ $\mathbf{end}$ \\ \quad \quad
+    $\mathbf{end}$ \\ \quad $\mathbf{end}$ \\ $\mathbf{end}$ \texttt{Deq}
+    \\ \hline
+  \end{tabular}
+  \caption{Lock-free queue enqueue and dequeue operations.}
+  \label{fig:queue-ops}
+\end{figure}
 
-Consider an execution history $H$ consisting of invocation and response events
-observed over time. We assume that events are totally ordered by real time, in
-the sense that no two events occur at exactly the same instant; any two events are
-separated by some (possibly very small) time difference.
+To address the verification challenge, we consider the Herlihy-Wing queue (HW
+hereinafter) as our primary case study. As shown in Figure \ref{fig:queue-ops},
+the HW queue is implemented using an infinite array initialized with
+$\mathbf{null}$. We distinguish between two levels of operation. The
+\textbf{Abstract (ABS)} level comprises the high-level specification methods,
+\texttt{Enq} and \texttt{Deq}, which define the external interface of the
+object. The \textbf{Representation (REP)} level consists of the concrete, atomic
+implementation steps (capitalized in the figure, e.g., \texttt{INC},
+\texttt{STORE}, \texttt{SWAP}, \texttt{READ}) that compose the ABS methods.
 
-Such a history admits two complementary views. At the lowest level, $H$ reflects
-the concrete execution of the program: the individual instructions that realize
-each method call. We refer to this as the \emph{representation-level} view
-(\textsf{REP}). At a higher level, the same execution can be viewed in terms of
-method invocations and responses governed by an abstract object specification;
-this is the \emph{abstract-level} view (\textsf{ABS}).
+Unlike a sequential specification where a concrete state $r$ maps to a single
+abstract state $q$ (a function $REP \to ABS$), a concurrent implementation
+allows for ambiguity. Due to the overlap of concurrent operations, the concrete
+memory state may effectively represent multiple valid abstract states
+simultaneously. To capture this, we define our abstraction function $A(r)$ to
+map a concrete state to the power set of abstract states:
+$$A(r): REP \to 2^{ABS}$$ This relaxation allows us to model all possible
+combinations of valid states that the system could be in, accounting for the
+non-determinism inherent in concurrency.
 
-Linearizability asks whether the behavior observed at the representation level
-can be explained by some legal abstract execution. Rather than reasoning directly
-about all possible interleavings, the paper suggests a different perspective.
-One may consider the set of all sequential executions obtained by linearizing
-the concrete history $H\!\restriction_{\textsf{REP}}$, and ask whether each such
-execution admits a valid abstract explanation.
+In terms of the concrete implementation, if a \texttt{STORE} operation that
+writes $x$ to the array completes before an \texttt{INC} operation allocates a
+slot for $y$ , then $x$ is guaranteed to occupy a lower array index than $y$,
+establishing the order $x<_ry$.
 
-Formally, suppose there exists an invariant $I$ over representation states and a
-mapping
+Using this partial order, we define the abstraction function $A(r)$ as the set
+of all abstract queues $q$ that satisfy two conditions. First, \emph{Content
+Preservation} requires that the items in the queue match the items in the array
+($items(q) = items(r)$). Second, \emph{Order Preservation} requires that the
+total order of the queue $<_q$ is consistent with the partial order of the array
+$<_r$; that is, $<_r \subseteq <_q$. Formally:
+$$A(r) = \{ q \mid items(q) = items(r) \wedge <_r \subseteq <_q \}$$ This
+definition captures the essence of the HW queue: while items are ordered by
+index, the concurrent nature of the \texttt{Enq} method (specifically the gap
+between \texttt{INC} and \texttt{STORE}) means that the ``logical'' order of
+enqueues may vary until the values are physically visible in the array.
+
+The ultimate goal is to prove that the implementation is linearizable. We recall
+that a history $H$ is linearizable if it can be extended to a complete history
+$H'$ that is equivalent to a legal sequential history $S$. In our
+set-theoretical model, we denote the set of all such legal sequential histories
+with the current execution as $Lin(H|_{ABS})$.
+$$A(r) \subseteq Lin(H|_{ABS})$$ If this condition holds initially and is
+preserved by every atomic step (\texttt{REP} transition) of the algorithm, we
+successfully can say that the program order respects the correctness
+specification.
+
+\begin{figure}[t]
+\centering \footnotesize \renewcommand{\arraystretch}{1.05}
+\begin{tabular}{|l|c|c|c|}
+\hline \textbf{Event} & $A(Lin(H|_{\tiny REP}))$ & $Lin(H|_{\tiny ABS})$ & V
+\\ \hline Init & $\{[]\}$ & $\{[]\}$ & $\checkmark$ \\ \hline A: ENQ(X) INV &
+$\{[]\}$ & $\{[],[x]\}$ & $\checkmark$ \\ \hline A: INC & $\{[]\}$ &
+$\{[],[x]\}$ & $\checkmark$ \\ \hline \colorbox{yellow!25}{A: STORE(X)} &
+\colorbox{yellow!25}{$\{[],[x]\}$} & \colorbox{yellow!25}{$\{[],[x]\}$} &
+\colorbox{yellow!25}{$\checkmark$} \\ \hline A: OK & $\{[x]\}$ & $\{[],[x]\}$ &
+$\checkmark$ \\ \hline B: ENQ(Y) INV & $\{[x]\}$ & $\{[],[x],[y],[x,y],[y,x]\}$
+& $\checkmark$ \\ \hline B: INC & $\{[x]\}$ & $\{[],[x],[y],[x,y],[y,x]\}$ &
+$\checkmark$ \\ \hline \colorbox{yellow!25}{B: STORE(Y)} &
+\colorbox{yellow!25}{$\{[x],[x,y]\}$} &
+\colorbox{yellow!25}{$\{[],[x],[y],[x,y],[y,x]\}$} &
+\colorbox{yellow!25}{$\checkmark$} \\ \hline B: OK & $\{[x,y]\}$ & $\{[x,y]\}$ &
+$\checkmark$ \\ \hline
+\end{tabular}
+\caption{Verification trace of concurrent enqueues}
+\label{fig:verification-trace}
+\end{figure}
+
+
+
+This trace, as demonstrated in Figure~\ref{fig:verification-trace}, illustrates
+the verification process. We observe two concurrent processes: process A
+enqueuing $x$ and process B enqueuing $y$. Initially, both the concrete array
+and the set of possible abstract states are empty. When A invokes \texttt{ENQ}
+and executes \texttt{INC}, the concrete state remains empty (since
+\texttt{STORE} has not yet occurred), yet the abstraction set expands to include
+both the empty queue and a queue containing $x$, reflecting the ambiguity of
+whether A's write is yet visible. The critical moment arrives at A's
+\texttt{STORE(X)}: the value now physically appears in the array, and the
+abstraction set narrows from ${ [ ], [x] }$ to reflect this certainty. Before
+B's \texttt{STORE(Y)}, the abstraction set ${[x]}$ contains only queues with $x$
+present; after B's \texttt{STORE(Y)}, it expands to ${[x], [x,y]}$ because the
+concrete memory now shows both values, but we cannot yet determine the relative
+order imposed by external observers. The final step, when both operations
+complete, converges to a single linearizable history: the queue $[x,y]$.
+Throughout this execution, the invariant $A(Lin(H|*{\text{REP}})) \subseteq
+Lin(H|*{\text{ABS}})$ is maintained, confirming that every state the concrete
+implementation produces is a subset of the abstract specification.
+
+\subsection{Why Linearizability is the Standard Correctness Condition}
+
+Linearizability has become the standard correctness condition for concurrent
+objects because it simultaneously preserves real-time semantics, supports
+modular reasoning. To understand its importance, it is useful to compare it with
+two closely related conditions: sequential consistency and serializability.
+
+\subsection{Sequential Consistency}
+
+Sequential consistency requires that a concurrent history be equivalent to some
+legal sequential history, but it does \emph{not} require preservation of
+real-time order. That is, if operation $e_1$ completes before $e_2$ begins in
+the actual execution, sequential consistency does not require $e_1$ to precede
+$e_2$ in the sequential explanation.
+
+Consider a FIFO queue with the following history:
+
 \[
-A : \textsf{REP} \to 2^{\textsf{ABS}}
+\texttt{ENQ}(x)_A;\ \texttt{OK}_A;\ \texttt{ENQ}(y)_B;\ \texttt{OK}_B;\ \texttt{DEQ}()_B;\ \texttt{OK}(y)_B.
 \]
-that associates each concrete state with abstract state.
 
-The abstraction function maps each concrete state to a set of abstract states
-consistent with the specification. If, for all
-$r \in \mathrm{Lin}(H\!\restriction_{\textsf{REP}})$, the invariant $I(r)$ holds
-and
+Here, $x$ is clearly enqueued before $y$, yet $y$ is dequeued first. This
+history can be made sequentially consistent by reordering the operations as if
+$\texttt{ENQ}(y)$ occurred before $\texttt{ENQ}(x)$. However, this violates the
+real-time order observed by an external observer. Linearizability forbids such
+reordering because it requires that the sequential explanation respect the
+real-time precedence relation.
+
+More importantly, sequential consistency is \emph{not compositional}. Even if
+each object is sequentially consistent in isolation, the whole system may not
+be. Herlihy and Wing provide an example with two queue objects $p$ and $q$ where
+each subhistory is sequentially consistent, but their composition is not. This
+failure of locality means that objects cannot be verified independently, which
+severely limits modular design.
+
+\subsection{Serializability}
+
+Serializability requires that concurrent \emph{transactions} be equivalent to
+some sequential execution. In strict serializability, the sequential order must
+also respect real-time order.
+
+Serializability is \emph{also} not local. Even if each object’s projection of a
+history is serializable, their combination may not be. Herlihy and Wing give a
+history involving two objects $p$ and $q$ where each object individually admits
+a serial explanation, yet no global serial order exists. Thus, serializability
+does not compose.
+
+Also, serializability is inherently \emph{blocking}. Consider two registers $x$
+and $y$ and two transactions:
+
 \[
-  A(r) \subseteq \mathrm{Lin}(H\!\restriction_{\textsf{ABS}}),
+A: \texttt{Read}(x); \texttt{Write}(y) \\ B: \texttt{Read}(y); \texttt{Write}(x)
 \]
-then the concrete implementation is linearizable with respect to the abstract
-object.
 
-This perspective, implicit in the original formulation of linearizability,
-provides a natural bridge to later work that seeks to mechanize such reasoning
-and to check these conditions automatically.
+If both reads return $0$, neither write can complete without violating
+serializability. One transaction must abort or wait.
+
+By contrast, linearizability is nonblocking: a pending invocation of a total
+operation can always be completed without waiting for another operation. This
+makes it especially appropriate for low-level concurrent data structures and
+multiprocessor systems.
+
+\subsection{Compositionality: The Key Distinction}
+
+The defining advantage of linearizability is \emph{locality}:
+
+\[
+H \text{ is linearizable } \iff \forall x.\ H|_x \text{ is linearizable}.
+\]
+
+Thus objects can be verified independently and then safely composed.
+
+
+
+\subsection{Conclusion}
+
+We have established a formal definition of linearizability and the mathematical
+underpinnings required to prove a piece of code is linearizable. Practical
+challenges remain, for example, deriving the precise abstraction function $A(r)$
+for complex data structure seems to be a non-trivial task and requires some
+ingenuity. However, these open questions do not diminish the foundational work
+by Herlihy and Wing. This paper provides the bedrock to successfully talk about
+\emph{correctness} from an intuition into a provable property.

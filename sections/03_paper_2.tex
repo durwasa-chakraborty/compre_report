@@ -1,40 +1,50 @@
-\section{Automatically Proving Linearizability \cite{Vafeiadis2010}}
+\section{Automatically Proving Linearizability \cite{Vafeiadis2010}}\label{sec:cave}
 
 \subsection{Motivation}
 
-We established in the previous section that \emph{linearizability} is the standard correctness condition for concurrent
-objects, yet establishing it for realistic implementations remains
-difficult.
-We explore an alternate way of proving linearizability by identifying \emph{linearization points}:
-an instant during the operations's execution at which the effect is deemed to occur
-atomically. While this approach is effective for simple implementations, it becomes increasingly fragile as
-algorithms grow more sophisticated. In many cases, a linearization point may be
-conditional, may occur in a different thread, or may depend on future execution.
-This is particularly common for operations that do not logically modify the
-shared abstract state, such as unsuccessful lookups or dequeue operations that
-return \textsf{EMPTY}. For such operations, insisting on a concrete
-linearization point often obscures, rather than clarifies, the correctness
-argument.
+We discussed in the previous section that \emph{linearizability} is the standard
+correctness condition for concurrent objects, yet proving linearizabilty for
+realistic implementations remains a significant challenge. We explore an
+alternate way of proving linearizability by identifying \emph{linearization
+points}: an instant during the operations's execution at which the effect is
+deemed to occur atomically. While this approach is effective for simple
+implementations, it becomes increasingly difficult as algorithms grow more
+sophisticated because of complex control flow or inter-thread interference. In
+many cases, a linearization point may be conditional, may occur in a different
+thread, or may depend on future execution. This is particularly common for
+operations that do not logically modify the shared abstract state, such as
+unsuccessful lookups or dequeue operations on an empty deque. For such
+operations, insisting on a concrete linearization point is marked with certain
+difficulty as it maybe in different places for different outputs.
 
-At the same time a different category of operations exist,
-\emph{effectful operations}, different in the sense that they necessarily update the abstract state,
-and those that are \emph{pure}, in the sense that they do not update the state.
-Effectful operations often, thus by established definition of the point where the effect takes place, becomes a natural candidate for linearization points, while
-pure operations do not. The key insight of the paper is that these two classes of
-executions should be treated differently, and that linearizability can be
-established without explicitly committing to a linearization point for every
-operation.
+Consider a lock-free stack with a \texttt{pop} operation.
+\begin{itemize}
+\item Scenario A (Success): If the stack is not empty, the linearization point
+  is the successful \texttt{CAS} instruction that updates the head pointer.
+\item Scenario B (Empty): If the stack is empty, the \texttt{CAS} is never
+  attempted. The linearization point is instead the \texttt{READ} instruction
+  where the thread observed the null head.
+\end{itemize}
+
+At the same time a different category of operations exist, \emph{effectful
+operations}, different in the sense that they necessarily update the abstract
+state, and those that are \emph{pure} which do not update the
+state. Effectful operations often, by established definition of the point
+where the effect takes place, becomes a natural candidate for linearization
+points, while pure operations do not. The key insight of the paper is that these
+two classes of executions should be treated differently, and that
+linearizability can be established without explicitly committing to a
+linearization point for every operation.
 
 \subsection{Proposed Solution}
 
-The proposed approach replaces explicit reasoning about linearization points and
-sequential histories with an instrumentation-based verification strategy. Rather
-than attempting to construct or guess a global linearization, the method embeds
+The proposed approach replaces reasoning about linearization points and
+sequential histories with an instrumentation-based verification strategy. The method augments
 the abstract specification directly into the concrete implementation through
 additional state and assertions. Linearizability is then reduced to the problem
 of showing that certain assertions cannot fail.
 
-The core idea is to distinguish, within a single execution, whether an operation
+The core idea is to distinguish  whether an operation
 has performed an effectful abstract update or whether it has remained pure. For
 effectful executions, the abstract operation is executed at a candidate
 instruction that is already present in the implementation, such as a successful
@@ -44,7 +54,7 @@ consistent with the abstract specification at some point during the execution.
 
 This distinction is realized by instrumenting each operation with auxiliary
 variables that track abstract effects. One variable records the result of an
-effectful abstract execution, if such an execution occurs. In parallel, a family
+effectful abstract execution, if such an execution occurs. In parallel, an array
 of flags records whether particular return values are admissible for a pure
 execution according to the specification. Initially, no abstract effect is
 assumed to have taken place, and no return value is assumed to be valid.
@@ -53,17 +63,31 @@ As the concrete execution proceeds, candidate effectful linearization points
 trigger the execution of the abstract specification, and the result of this
 execution is stored. Independently, whenever the specification permits a pure
 operation to return a certain value without modifying the abstract state, the
-corresponding admissibility flag is enabled. At each return point of the concrete
-method, a single assertion is checked: either an effectful abstract update has
-occurred and the concrete return value matches the recorded abstract result, or
-no effectful update has occurred and the returned value is among those permitted
-by the specification.
+corresponding admissibility flag is enabled. At each return point of the
+concrete method, a single assertion is checked: either an effectful abstract
+update has occurred and the concrete return value matches the recorded abstract
+result, or no effectful update has occurred and the returned value is among
+those permitted by the specification.
 
-Crucially, this assertion localizes the linearizability argument. Instead of
-quantifying over all possible linearizations of the execution history, the proof
-obligation reduces to a safety property of the instrumented program. If the
-assertion holds on all executions, then every concrete behavior admits a valid
-abstract explanation, and the implementation is linearizable.
+
+\begin{figure}[t]
+\centering
+\begin{lstlisting}[language=C]
+int tryDequeue(void) { Node next, head, tail; int pval;
+
+    while (true) { head = Q->head; tail = Q->tail; next = head->tl;
+
+        if (Q->head != head) continue;
+
+        if (head == tail) { if (next == NULL) return EMPTY;
+
+            CAS(&Q->tail, tail, next); } else { pval = next->val; if
+          (CAS(&Q->head, head, next)) return pval; } } }
+\end{lstlisting}
+\caption{Michael \& Scott queue tryDequeue (adapted from
+  Vafeiadis~\cite{Vafeiadis2010}).}
+\label{fig:ms-dequeue}
+\end{figure}
 
 \subsection{Example: Concurrent Queue}
 
@@ -74,32 +98,161 @@ implementations, this effect corresponds to a concrete instruction that links a
 new node into the data structure. At this instruction, the abstract enqueue
 operation is executed, and its result is recorded.
 
-In contrast, a dequeue operation that returns \textsf{EMPTY} does not modify the
-abstract queue. Such an execution may span multiple reads and checks, and no
-single instruction need correspond to its logical effect. Rather than assigning
-it an artificial linearization point, the method simply checks whether returning
-\textsf{EMPTY} is consistent with the abstract queue being empty at some point
-during the execution. If so, the return is deemed admissible.
+In contrast, a dequeue, from Figure \ref{fig:ms-dequeue}, operation that returns
+\textsf{EMPTY} does not modify the abstract queue. Such an execution may span
+multiple reads and checks, and no single instruction correspond to its logical
+effect. Rather than assigning it an arbitary linearization point, the method
+simply checks whether returning \textsf{EMPTY} is consistent with the abstract
+queue being empty at some point during the execution. If so, the return is
+deemed admissible.
+
+Determining the linearization point requires distinguishing between varying
+execution states: whether the queue is empty, whether it is non-empty, and
+whether the thread is actively "helping" another operation complete. Crucially,
+this results in a linearization point that is both input-dependent and
+execution-dependent. For example, if the queue is empty, the
+linearization point is not a state-modifying CAS, but rather the atomic read
+confirming \texttt{next == NULL}. Thus, unlike enqueue, the \texttt{tryDequeue} method
+resists a single static definition, requiring a case-by-case evaluation of the
+runtime execution path.
+
 
 \subsection{Verification Procedure}
 
-Once the implementation has been instrumented, linearizability checking reduces
-to verifying that the return-point assertions are never violated. This task can
-be discharged using existing static analysis techniques, such as abstract
-interpretation or symbolic execution. Importantly, the verification is performed
-on the concrete program augmented with ghost state, and does not require
-explicit enumeration of concurrent interleavings or sequential histories.
+\begin{figure}[t]
+\centering
+\begin{lstlisting}[language=C]
+int tryDequeue(void) { Node next, head, tail; int pval;
+
+    // --- instrumentation at entry ---
+    lres = UNDEF;
+    can_return[EMPTY] = false;
+
+    while (true) {
+      head = Q->head;
+      tail = Q->tail;
+      next = head->tl;
+
+        if (Q->head != head) continue;
+
+        // PURE CHECKER (symbolic)
+        // if (AQ == empty) can_return[EMPTY] = true;
+
+        if (head == tail) { if (next == NULL) {
+
+                assert(
+                lres == EMPTY ||
+                (lres == UNDEF &&
+                can_return[EMPTY]) );
+
+                return EMPTY; }
+
+            // --- CAS on tail
+            if (CAS(&Q->tail, tail, next))
+            { assert (lres ==UNDEF);
+              lres = spec_tryDequeue(); // WRONG LP, but still a
+              candidate }
+
+        } else { pval = next->val;
+
+            // --- CAS on head
+            if (CAS(&Q->head, head, next)) {
+                assert(lres == UNDEF); lres = spec_tryDequeue();
+                assert(lres == pval); return pval; } } } }
+\end{lstlisting}
+\caption{Instrumented \texttt{tryDequeue}}
+\label{fig:ms-instrumented}
+\end{figure}
+
+
+
+The verification procedure presented in this work is an automatic technique for
+proving the linearizability of concurrent data structure implementations. The
+procedure operates by distinguishing between \emph{effectful} executions (which
+modify the shared abstract state) and \emph{pure} executions (which do not). The
+algorithm, formally defined as \texttt{PROVELINEARIZABLE}, takes as input the
+library's constructor, its operations, and their corresponding atomic functional
+specifications.
+
+The procedure is divided into two distinct phases: a \emph{Preparation Phase}
+that generates auxiliary constructs and a \emph{Checking Phase} that instruments
+the code for verification.
+
+\subsubsection{Preparation Phase}
+In this initial phase, the algorithm performs the following steps:
+\begin{enumerate}
+
+    \item \textbf{Pure Checker Generation:} For each operation, a "Pure
+      Linearizability Checker" is generated. This checker is derived from the
+      specification by identifying all syntactically pure execution paths (paths
+      that do not assign to global variables). Along these paths, the return
+      statement \texttt{return v} is replaced with the assignment
+      \texttt{can\_return[v] = true}.
+    \item \textbf{Candidate Linearization Points:} The function
+      \\ \texttt{GETCANDIDATELINPOINTS} analyzes the source code to identify
+      potential effectful linearization points. It unfolds definitions of atomic
+      primitives (like CAS) to expose control flow and selects one
+      state-modifying command along each execution path as a candidate
+      linearization point.
+\end{enumerate}
+
+\subsubsection{Checking Phase}
+In the second phase, each operation $op_i$ is instrumented with auxiliary
+variables and assertions to verify correctness.
+
+\subsubsection{Instrumentation Variables}
+Two auxiliary variables are introduced for every thread:
+\begin{itemize}
+    \item \texttt{lres}: Stores the result of the abstract operation if an
+      effectful linearization point occurs. It is initialized to \texttt{UNDEF}.
+    \item \texttt{can\_return}: A boolean array indexed by possible return
+      values. It tracks whether a valid pure linearization point has been
+      observed. All entries are initialized to \texttt{false}.
+\end{itemize}
+
+\subsubsection{Code Transformation}
+The source code is modified as follows:
+\begin{itemize}
+    \item \textbf{At Candidate Points:} At every identified effectful
+      linearization point, code is inserted to execute the abstract
+      specification. An assertion \texttt{assert(lres == UNDEF)} ensures the
+      linearization point executes at most once per path.
+    \item \textbf{Background Pure Checking:} The verification tool (CAVE)
+      simulates the execution of the \emph{Pure Checker} after every atomic
+      command of the current thread and after every step of concurrently
+      executing threads. This updates \texttt{can\_return} continuously based on
+      the state of the abstract object.
+    \item \textbf{At Return Points:} Finally, at the method's return statement
+      returning value \texttt{res}, the following assertion is inserted:
+    \[
+\texttt{assert}(lres == res \lor (lres == UNDEF \land can\_return[res]))
+\]
+    This assertion verifies that either the operation linearized effectively
+    (matching \texttt{lres}) or it found a valid pure linearization point
+    (tracked by \texttt{can\_return}).
+\end{itemize}
+
+If the verification tool is able to establish that all inserted assertions hold
+on every execution path, then the implementation is concluded to be
+linearizable. Figure~\ref{fig:ms-instrumented} presents the instrumented version
+of the code. In this transformation, each \emph{CAS} instruction is augmented
+with assertion-based instrumentation to capture potential effectful
+linearization points. Additionally, for executions in which the queue is empty,
+a pure linearization checker is introduced; this component updates the
+\texttt{can\_return} flag to record that returning \texttt{EMPTY} is consistent
+with the abstract specification at some earlier instant.
+
+
 
 \subsection{Conclusion}
-
 The approach presented in this paper offers a practical and conceptually clean
 path to automated linearizability proofs. By separating effectful and pure
 executions and embedding the abstract specification directly into the
 implementation, it avoids the need for explicit linearization points in cases
-where they are difficult or unnatural to identify. Linearizability is reduced to
-a local safety property, enabling the use of mature verification tools.
+where they are difficult to identify. Linearizability is reduced to a local
+safety property, enabling the use of mature verification tools.
 
 The method has been implemented in the \textsc{Cave} verification tool and
 evaluated on a range of concurrent stacks, queues, and set implementations.
-These results demonstrate that the approach is expressive enough to handle
+The results demonstrate that the approach is expressive enough to handle
 realistic concurrent data structures while remaining amenable to automation.

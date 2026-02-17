@@ -6,7 +6,7 @@
    (TeX-add-to-alist 'LaTeX-provided-class-options
                      '(("acmart" "sigplan")))
    (TeX-add-to-alist 'LaTeX-provided-package-options
-                     '(("amssymb" "") ("amsmath" "") ("listings" "") ("xcolor" "") ("tikz" "") ("mathpartir" "")))
+                     '(("amssymb" "") ("amsmath" "") ("listings" "") ("xcolor" "") ("tikz" "") ("mathpartir" "") ("hyperref" "") ("mathtools" "")))
    (add-to-list 'LaTeX-verbatim-environments-local "lstlisting")
    (add-to-list 'LaTeX-verbatim-macros-with-braces-local "lstinline")
    (add-to-list 'LaTeX-verbatim-macros-with-braces-local "path")
@@ -30,7 +30,9 @@
     "listings"
     "xcolor"
     "tikz"
-    "mathpartir")
+    "mathpartir"
+    "hyperref"
+    "mathtools")
    (TeX-add-symbols
     '("footnotetextcopyrightpermission" 1)
     "Bbbk")

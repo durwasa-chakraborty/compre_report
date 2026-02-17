@@ -12,6 +12,10 @@
     "zoo2026"
     "cosmo2020"
     "reagent2012"
-    "turonthesis"))
+    "turonthesis"
+    "obstruction-freedom"
+    "hoare-logic"
+    "iris-proofmode"
+    "mcas-harris-2002"))
  '(or :bibtex :latex))
 

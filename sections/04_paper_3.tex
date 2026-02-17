@@ -1,80 +1,244 @@
-\section{Zoo: A Framework for the Verification of Concurrent OCaml 5 Programs using Separation Logic\cite{zoo2026}}
+\section{Zoo: A Framework for the Verification of Concurrent OCaml 5 Programs using Separation Logic\cite{zoo2026}}\label{sec:zoo}
 \subsection{Motivation}
 
-So far, we have focused on linearizability for data structures in which
-the linearization point can be identified either within the operation
-itself or within another method invoked during its execution. We now
-shift attention to concurrent libraries operating under a language-
-specific memory model. The release of OCaml 5 introduced true
-parallelism via multicore support, enabling a growing ecosystem of
-concurrent libraries such as \textsf{Saturn}, \textsf{Eio}, and
-\textsf{Kcas}. While this substantially broadened OCaml’s applicability,
-it also raised new verification challenges, particularly the lack of a
-practical framework for reasoning about realistic concurrent OCaml
-programs that rely on features such as algebraic data types and mutable
-records.
+So far, we have focused on linearizability for data structures in which the
+linearization point can be identified either within the operation itself or
+within another method invoked during its execution. We now shift attention to
+concurrent libraries operating under a language- specific memory model under
+sequential consistency. The release of OCaml 5 introduced true parallelism via
+multicore support, enabling a growing ecosystem of concurrent libraries such as
+\textsf{Saturn}, \textsf{Eio}, and \textsf{Kcas}. While this substantially
+broadened OCaml’s applicability, it also raised new verification challenges,
+particularly the lack of a practical framework for reasoning about realistic
+concurrent OCaml programs that rely on features such as algebraic data types and
+mutable records.
 
-Existing Iris-based approaches, including \emph{HeapLang}, are expressive
-but poorly aligned with OCaml. They lack essential language constructs,
-most notably algebraic data types and mutually recursive functions, and
-require substantial manual translation from OCaml into the modeling
-language. This translation burden complicates proof maintenance and
-weakens the connection to source programs. Moreover, OCaml’s concurrency
-support exposed semantic gaps: atomic record fields were absent, unsafe
-casts were common, and the semantics of physical equality for
-compare-and-set were under-specified.
+Existing Iris \cite{iris-proofmode} based approaches, including \emph{HeapLang},
+are expressive but poorly aligned with OCaml. They lack essential language
+constructs, most notably algebraic data types and mutually recursive functions,
+and require substantial manual translation from OCaml into the modeling
+language. This translation burden complicates proof maintenance and weakens the
+connection to source programs. The absence of atomic record fields forced
+programmers to rely on unsafe encodings, revealing a mismatch between the
+language’s abstractions and its intended concurrent usage.
 
-The paper is motivated by these limitations. Its goal is to develop a
-practical verification framework for real-world concurrent OCaml
-programs, while refining the language and its semantics to better
-support safe and verifiable concurrency.
+\begin{figure}[t]
+\centering
+\begin{lstlisting}[language=OCaml]
+(* Intended: atomic field inside a record *) type node = { value : int; next :
+    node option }
 
+(* Unsafe encoding to simulate atomic field *) let cas_next (n : node) oldv newv
+  = let atomic_field = (Obj.magic (&n.next) : node option Atomic.t) in
+  Atomic.compare_and_set atomic_field oldv newv
+\end{lstlisting}
+\caption{Simulating an atomic record field using an unsafe cast.}
+\label{fig:unsafe-atomic-field}
+\end{figure}
+
+Figure~\ref{fig:unsafe-atomic-field} illustrates this issue. The programmer
+wishes to treat the record field \texttt{next} as atomic, but since the type
+system does not permit atomic annotations on fields, the code casts the field’s
+memory to \texttt{Atomic.t} using \texttt{Obj.magic}. At this point, the type
+system’s guarantees are circumvented: the field is declared nonatomic in the
+type definition.
+
+The consequence is that the semantic classification of the location (as atomic
+or nonatomic) no longer aligns with the static program structure. This breaks
+the abstraction boundary enforced by the type system and complicates formal
+reasoning, since the memory model and verification logic must now account for
+behavior that is invisible at the type level.
+
+
+The paper is motivated by these limitations. Its goal is to develop a practical
+verification framework for real-world concurrent OCaml programs, while refining
+the language and its semantics to better support safe and verifiable programs.
 
 \subsection{Proposed Solution}
-The authors propose Zoo, a comprehensive framework for verifying concurrent OCaml 5 programs using Iris, a state-of-the-art concurrent separation logic mechanized in the Rocq proof assistant.
+The authors propose Zoo, a comprehensive framework for verifying concurrent
+OCaml 5 programs using Iris, a state-of-the-art concurrent separation logic
+mechanized in the Rocq proof assistant.
 \vspace{-0.5\baselineskip}
 \paragraph{ZooLang.}
-At the core of Zoo is ZooLang, a language designed to faithfully model a substantial fragment of OCaml. ZooLang supports algebraic data types, mutable and immutable records, references, atomic operations, mutual recursion, and concurrency primitives. It is deeply embedded in Rocq and comes with a formally defined operational semantics and a corresponding Iris-based program logic. The framework includes a tool, \textsf{ocaml2zoo}, which translates OCaml source programs into ZooLang code embedded in Rocq. Unlike HeapLang, which introduces various encodings in the translation that make the relation between source and verified programs difficult to maintain, ZooLang is syntactically very close to OCaml, ensuring that verification artifacts remain aligned with real implementations.
+At the core of Zoo is ZooLang, a language designed to faithfully model a
+substantial fragment of OCaml. ZooLang supports algebraic data types, mutable
+and immutable records, references, atomic operations, mutual recursion, and
+concurrency primitives. It is deeply embedded in Rocq and comes with a formally
+defined operational semantics and a corresponding Iris-based program logic. The
+framework includes a tool, \textsf{ocaml2zoo}, which translates OCaml source
+programs into ZooLang code embedded in Rocq. Unlike HeapLang, which introduces
+various encodings in the translation that make the relation between source and
+verified programs difficult to maintain, ZooLang is syntactically very close to
+OCaml, ensuring that verification artifacts remain aligned with real
+implementations.
 
 \vspace{-0.5\baselineskip}
 \paragraph{Specifications and Proofs.}
-Once translated to ZooLang, users can write specifications and prove them in Iris. For example,
-the specification of \texttt{stack\_push} is:
+Once translated to ZooLang, users can write specifications and prove them in
+Iris. For example, the specification of \texttt{stack\_push} is:
 
-$\textsf{Lemma stack\_push\_spec t}\ \ell\ \textsf{v} : \\
-\text{}\qquad<<< \textsf{stack\_inv t} \ \ell \\
-\text{}\qquad\qquad\mid \forall\forall \ \textsf{vs},\ \text{stack\_model t vs} >>> \\
-\text{}\qquad\qquad\textsf{stack\_push t v}\ @\ \uparrow \ell \\
-\text{}\qquad<<< \textsf{stack\_model t (v :: vs)} \\
-\text{}\qquad\qquad\mid \textsf{RET (); True} >>>.$
+$\textsf{Lemma stack\_push\_spec t}\ \ell\ \textsf{v} : \\ \text{}\qquad<<<
+\textsf{stack\_inv t} \ \ell \\ \text{}\qquad\qquad\mid \forall\forall
+\ \textsf{vs},\ \text{stack\_model t vs} >>>
+\\ \text{}\qquad\qquad\textsf{stack\_push t v}\ @\ \uparrow \ell
+\\ \text{}\qquad<<< \textsf{stack\_model t (v :: vs)} \\ \text{}\qquad\qquad\mid
+\textsf{RET (); True} >>>.$
 
-As in Hoare logic, the specification consists of pre- and postconditions,
-each split into a private part (the stack invariant \textsf{stack\_inv t}) and an atomic part (the abstract stack state \textsf{stack\_model}). The atomic conditions capture the linearization point, stating that during execution the stack’s abstract state is atomically updated from vs to v :: vs.
+As in Hoare logic\cite{hoare-logic}, the specification consists of pre- and
+postconditions, each split into a private part (the stack invariant
+\textsf{stack\_inv t}) and an atomic part (the abstract stack state
+\textsf{stack\_model}). The atomic conditions capture the linearization point,
+stating that during execution the stack’s abstract state is atomically updated
+from \texttt{vs} to \texttt{v :: vs}.
 
 %% (TODO Reduce the line space)
 
 \vspace{-0.5\baselineskip}
-\paragraph{Language Extensions: Atomic Record Fields.}
-The authors identified limitations in OCaml’s support for atomic operations, particularly the inefficiency of atomic
-references that introduce additional indirection. To address this, they designed and implemented atomic record fields,
-allowing individual record fields to be marked as atomic.
-
-\vspace{-0.5\baselineskip}
 \paragraph{Physical Equality: A Precise Semantics.}
-A major technical contribution is a new, precise semantics for physical equality and \texttt{compare\_and\_set}.
-Physical equality is essential for lock-free algorithms but is subtle and dependent on compiler optimizations such
-as sharing and unsharing. The authors show that equating physical equality with structural equality is unsound.
-Instead, they model it as non-deterministic with carefully specified guarantees. They also introduce a mechanism
-for controlling unsharing through generative constructors, enabling sound reasoning.
+A major technical contribution is a new, precise semantics for physical equality
+and \texttt{compare\_and\_set}. Physical equality is essential for lock-free
+algorithms but is dependent on compiler optimizations such as sharing and
+unsharing. The authors show that equating physical equality with structural
+equality is unsound. Instead, they model it as non-deterministic with carefully
+specified guarantees. They also introduce a mechanism for controlling unsharing
+through generative constructors. OCaml's physical equality operator
+(\texttt{==}) presents a fundamental challenge for concurrent reasoning: it is
+under-specified by the language semantics. The Zoo paper addresses this head-on
+by introducing generative constructors, which restore stable identity properties
+needed for sound CAS reasoning.
+
+Physical equality in OCaml is not fully determined by the abstract value
+semantics. For example:
+\begin{verbatim}
+  Some 0 == Some 0
+\end{verbatim}
+may return \texttt{true} or \texttt{false} depending on whether the two blocks
+are represented identically in memory. Zoo formalizes this by distinguishing:
+\begin{itemize}
+  \item $\hat{v}_1 \mathrel{==} \hat{v}_2$: the values \emph{must} be physically
+    equal,
+  \item $\hat{v}_1 \approx \hat{v}_2$: the values \emph{may} be physically
+    equal.
+\end{itemize}
+This distinction allows the semantics to avoid baking in false assumptions about
+representation sharing, acknowledging that the compiler may make
+implementation-specific choices about block allocation and layout.
+
+\begin{figure}[t]
+\centering \footnotesize
+
+\begin{tabular}{c c}
+\textbf{Source Program} & \textbf{Heap Layout} \\[6pt]
+
+\begin{minipage}{0.45\linewidth}
+\begin{verbatim}
+(* Before optimization *) let x = Some 0 in let y = x in x == y (* true *)
+\end{verbatim}
+\end{minipage}
+&
+\begin{minipage}{0.45\linewidth}
+Before unsharing:
+
+x ----\textbackslash \\ > [Some | 0] (B1) \\ y ----/
+\end{minipage}
+
+\\[12pt]
+
+\begin{minipage}{0.45\linewidth}
+\begin{verbatim}
+(* After compiler unsharing *) let x = Some 0 in let y = Some 0 in x == y (*
+ false *)
+\end{verbatim}
+\end{minipage}
+&
+\begin{minipage}{0.45\linewidth}
+After unsharing:
+
+x ----> [Some | 0] (B1) \\ y ----> [Some | 0] (B2) \\
+\end{minipage}
+
+\end{tabular}
+
+\caption{Unsharing of immutable blocks in OCaml. The abstract value \texttt{Some
+    0} remains the same, but physical identity changes due to compiler
+  duplication.}
+\label{fig:unsharing}
+\end{figure}
+
+As shown in Figure~\ref{fig:unsharing}, the original program binds \texttt{y} to
+\texttt{x}, so both variables reference the same heap block. Since OCaml’s
+\texttt{==} operator checks physical equality (pointer identity), \texttt{x ==
+  y} evaluates to \texttt{true}.
+
+After compiler unsharing, the expression \texttt{Some 0} is duplicated. Although
+the abstract values are structurally equal, they now occupy distinct heap
+blocks. Consequently, \texttt{x == y} evaluates to \texttt{false}.
+
+This phenomenon is semantically invisible under structural equality but
+observable under physical equality. In concurrent code, where algorithms
+sometimes rely on pointer identity for synchronization, such unsharing can
+introduce correctness bugs.
+
+
+\subsection{CAS Vulnerability to Unsharing}
+
+Compare-and-swap (CAS) operations rely on physical equality:
+\begin{verbatim}
+  Atomic.compare_and_set loc expected new
+\end{verbatim}
+succeeds only if the current value at \texttt{loc} is physically identical to
+\texttt{expected}.
+
+If the compiler unshares \texttt{expected}, CAS behavior can change
+unexpectedly. Initially, when \texttt{expected} and the value at \texttt{loc}
+reference the same block, CAS succeeds. After unsharing, \texttt{expected}
+becomes a distinct copy, so CAS fails despite abstract equality. Thus, program
+behavior may vary depending on compiler optimizations, making concurrent
+reasoning fragile.
+
+
+Zoo introduces \emph{generative immutable blocks}, marked with the
+\texttt{[@generative]} annotation.
+
+
+For generative blocks, physical equality is tightly specified:
+\[
+\hat{v}_1 \mathrel{==} \hat{v}_2 \iff \mathit{bid}_1 = \mathit{bid}_2
+\]
+This makes them behave like mutable references in terms of identity, even though
+their contents are immutable.
+
+The key invariant now is \emph{the compiler must not unshare generative blocks}.
+
+When a constructor is marked \texttt{[@generative]} the compiler preserves the
+block's identity across the entire computation. Physical equality becomes
+deterministic with respect to that block and we enforce two generative blocks
+are physically equal iff they have the same \texttt{bid}.
+
+
+Without \texttt{@generative}, physical equality is under-specified: two
+abstractly equal values may or may not be physically equal, meaning CAS
+correctness depends on compiler behavior rather than program logic. The identity
+becomes explicit through the \texttt{[@generative]} annotation, physical
+equality is no longer under-specified for generative blocks, and CAS reasoning
+becomes stable and provable. Zoo demonstrates this with the Rcfd (recursive file
+descriptor) example where verification fails when the file descriptor state is
+non-generative, but succeeds after marking it \texttt{[@generative]}, because
+CAS operations on the state can now be relied upon. The intuition is :
+\emph{generative} constructors tell the compiler this value has identity ; do
+not clone it. This restores the invariant that if CAS fails, it is because the
+concurrent state truly changed, not because the compiler duplicated a value.
 
 \subsection{Conclusion}
-This paper introduces Zoo, a practical framework for verifying concurrent OCaml 5 programs, bridging
-real-world code and mechanized verification through ZooLang. It also contributes language improvements
-such as atomic record fields and a precise semantics for physical equality.
-Using Zoo, the authors verified a subset of the OCaml standard library, components of the \textsf{Eio} library, and a
-large portion of the \textsf{Saturn} lock-free data structure library, including stacks, queues, bags, and a work-stealing
-deque. These results demonstrate the practicality and scalability of the framework.
-The project remains actively developed. During the past semester, I
-have begun contributing to the codebase and engaging with the
-maintainers, including submitting improvements and participating in
-ongoing discussions.\footnote{\url{https://github.com/clef-men/zoo/pull/2}}
+This paper introduces Zoo, a practical framework for verifying concurrent OCaml
+5 programs, bridging real-world code and mechanized verification through
+ZooLang. It also contributes language improvements such as atomic record fields
+and a precise semantics for physical equality. Using Zoo, the authors verified a
+subset of the OCaml standard library, components of the \textsf{Eio} library,
+and a large portion of the \textsf{Saturn} lock-free data structure library,
+including stacks, queues, bags, and a work-stealing deque. These results
+demonstrate the practicality and scalability of the framework. The project
+remains actively developed and last semester, I made couple of minor
+contributions to the
+codebase.\footnote{\url{https://github.com/clef-men/zoo/pull/2}}
+\footnote{\url{https://github.com/clef-men/zoo/pull/1}}

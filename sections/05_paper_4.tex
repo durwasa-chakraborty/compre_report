@@ -1,29 +1,44 @@
-\section{Efficient Multi-word Compare and Swap\cite{Guerraoui2013}}
+\section{Efficient Multi-word Compare and Swap\cite{Guerraoui2013}}\label{sec:mcas}
 
 \subsection{Motivation}
 
+At this stage, the verification landscape includes several automated
+linearizability provers and checkers, supporting both stateless and stateful
+exploration of concurrent executions.
 
-At this stage, the verification landscape includes several automated linearizability provers and checkers, supporting both stateless and stateful exploration of concurrent executions.
+We now turn to a different flavored data structure: multi-word compare-and-swap
+(MCAS), as verified in Zoo~\cite{zoo2026}. Unlike simpler concurrent structures,
+MCAS exhibits non-local completion: an operation may be completed by a thread
+other than the one that invoked it, a phenomenon also observed in the automatic
+linearizability work of Vafeiadis~\cite{Vafeiadis2010}. This helping behavior
+complicates reasoning, as the linearization point may lie outside the extent of
+the calling thread.
 
-However, a critical class of implementations remains fundamentally outside the reach of existing automation. In these implementations, linearization points are non-local: the operation may be completed by a thread other than the one that invoked it; the point at which the operation takes effect may lie outside the scope of the method call.
-
-Multi-word compare-and-swap (hereafter MCAS) occupies precisely this gap. MCAS is designed for multicore systems, where performance is achieved not through coarse-grained mutual exclusion, but through cooperative progress, descriptor-based indirection, and helping. As a result, MCAS serves as a compelling and necessary case study to study beyong canonical data structures.
+Our goal is therefore to examine the complexities involved in defining and
+verifying a data structure such as MCAS, and to understand how it is engineered
+for multicore systems. MCAS is specifically designed to exploit fine-grained
+concurrency rather than relying on coarse-grained mutual exclusion. Its
+correctness relies on descriptor-based indirection, cooperative helping, and
+careful synchronization protocols. For this reason, MCAS becomes a compelling
+and a necessary case study.
 
 
 \subsection[Verification Detail]{Proposed Solution}
 
-CAS is a hardware-supported atomic primitive that compares the contents of a memory location with an expected value and, if they match, atomically updates it to a new value.
-
-MCAS  generalizes CAS to multiple memory locations. An MCAS operation over $k$ locations atomically performs the following logical action:
+MCAS generalizes CAS to multiple memory locations. An MCAS operation over $k$
+locations atomically performs the following logical action:
 
 \begin{center}
-If all locations $x_1, \ldots, x_k$ contain values $o_1, \ldots, o_k$, then update them to $n_1, \ldots, n_k$; otherwise, leave all locations unchanged.
+If all locations $x_1, \ldots, x_k$ contain values $o_1, \ldots, o_k$, then
+update them to $n_1, \ldots, n_k$; otherwise, leave all locations unchanged.
 \end{center}
 
 
 \subsubsection{Classical Descriptor-Based MCAS}
 
-Traditional lock-free MCAS implementations use a descriptor to coordinate the update across multiple locations. The protocol proceeds in three phases.
+Traditional lock-free MCAS implementations use a descriptor to coordinate the
+update across multiple locations \cite{mcas-harris-2002}. The protocol proceeds
+in three phases.
 
 \paragraph{Example}
 
@@ -38,14 +53,16 @@ $(x, y, z) : (1,2,3) \rightarrow (4,5,6)$
 \end{center}
 Here, $k = 3$.
 
-\paragraph{Phase 1: Freeze (Lock) Phase :: $k$ CAS operations}
+\paragraph{Phase 1: Freeze (Installation) Phase :: $k$ CAS operations}
 
-Each target location is CASed from its expected value to a pointer to a shared descriptor $D$. Each CAS both checks the value and locks the location.
+Each target location is updated using CAS from its expected value to a pointer
+to a shared descriptor $D$. This CAS both verifies that the location holds the
+expected value and installs the descriptor pointer into that word.
+
 
 \begin{center}
-\texttt{CAS}$(x, 1, \&D)$ \\
-\texttt{CAS}$(y, 2, \&D)$ \\
-\texttt{CAS}$(z, 3, \&D)$
+\texttt{CAS}$(x, 1, \&D)$ \\ \texttt{CAS}$(y, 2, \&D)$ \\ \texttt{CAS}$(z, 3,
+\&D)$
 \end{center}
 
 If any CAS fails, the operation aborts.
@@ -65,9 +82,8 @@ This CAS constitutes the linearization point of the MCAS operation.
 Each frozen location is updated based on the descriptor's final state:
 
 \begin{center}
-\texttt{CAS}$(x, \&D, 4)$ \\
-\texttt{CAS}$(y, \&D, 5)$ \\
-\texttt{CAS}$(z, \&D, 6)$
+\texttt{CAS}$(x, \&D, 4)$ \\ \texttt{CAS}$(y, \&D, 5)$ \\ \texttt{CAS}$(z, \&D,
+6)$
 \end{center}
 
 
@@ -82,16 +98,22 @@ For the example above, the result is 7 CAS operations.
 \subsection{Efficient MCAS: $(k + 1)$ CAS }
 
 
-The dominant source of this overhead is the cleanup phase, which requires rewriting each memory location after the outcome of the MCAS has been determined. Rachid et al. observe that this phase is conceptually unnecessary: once the global decision has been made, the final value of each location is already fixed at the logical level.
+This paper observes that the cleanup phase is conceptually unnecessary: once the
+global decision has been made, the final value of each location is already fixed
+at the logical level.
 
 
-The central insight of the Rachid et al. protocol is the following:
+The central insight of this paper's protocol is the following:
 
 \begin{center}
-\textit{Rather than restoring or overwriting memory locations after the decision, encode the final outcome in the descriptor and interpret each location's value through the descriptor.}
+\textit{Rather than restoring or overwriting memory locations after the
+  decision, encode the final outcome in the descriptor and interpret each
+  location's value through the descriptor.}
 \end{center}
 
-Consequently, a memory location that still references a descriptor is treated as logically containing either the old value or the new value, depending solely on the descriptor's finalized state.
+Consequently, a memory location that still references a descriptor is treated as
+logically containing either the old value or the new value, depending solely on
+the descriptor's finalized state.
 
 We illustrate the protocol using the same running example:
 \begin{center}
@@ -105,19 +127,21 @@ $(x, y, z) : (1,2,3) \rightarrow (4,5,6)$
 
 \paragraph{Phase 1: Freeze Phase :: $k$ CAS Operations}
 
-Each target location is atomically updated from its expected value to a pointer to a shared descriptor $D$:
+Each target location is atomically updated from its expected value to a pointer
+to a shared descriptor $D$:
 
 \begin{center}
-\texttt{CAS}$(x, 1, \&D)$ \\
-\texttt{CAS}$(y, 2, \&D)$ \\
-\texttt{CAS}$(z, 3, \&D)$
+\texttt{CAS}$(x, 1, \&D)$ \\ \texttt{CAS}$(y, 2, \&D)$ \\ \texttt{CAS}$(z, 3,
+\&D)$
 \end{center}
 
-As in classical MCAS, each CAS simultaneously checks the expected value and marks the location as participating in the ongoing MCAS.
+As in classical MCAS, each CAS simultaneously checks the expected value and
+marks the location as participating in the ongoing MCAS.
 
 \paragraph{Phase 2: Decision Phase :: 1 CAS Operation}
 
-The outcome of the operation is finalized by atomically updating the descriptor's status:
+The outcome of the operation is finalized by atomically updating the
+descriptor's status:
 
 \begin{center}
 \texttt{CAS}$(D.\text{status}, \text{ACTIVE}, \text{SUCCESS})$
@@ -127,16 +151,21 @@ This operation serves as the linearization point for the MCAS.
 
 \paragraph{Elimination of the Cleanup Phase}
 
-In contrast to classical MCAS, the efficient MCAS \cite{Guerraoui2013} performs no explicit cleanup CAS's.
+In contrast to classical MCAS, the efficient MCAS \cite{Guerraoui2013} performs
+no explicit cleanup CAS's.
 
 \begin{itemize}
-\item After the decision phase, memory locations may continue to physically reference the descriptor.
+\item After the decision phase, memory locations may continue to physically
+  reference the descriptor.
 \item When a thread reads such a location, it consults the descriptor:
 \begin{itemize}
-\item If the descriptor state is \texttt{SUCCESS}, the location is interpreted as holding the new value.
-\item If the state is \texttt{FAILED}, the location is interpreted as holding the original value.
+\item If the descriptor state is \texttt{SUCCESS}, the location is interpreted
+  as holding the new value.
+\item If the state is \texttt{FAILED}, the location is interpreted as holding
+  the original value.
 \end{itemize}
-\item As a result, the memory is logically updated without requiring immediate physical rewrites.
+\item As a result, the memory is logically updated without requiring immediate
+  physical rewrites.
 \end{itemize}
 
 The total number of CAS operations is therefore:
@@ -144,7 +173,147 @@ The total number of CAS operations is therefore:
 k \text{ (freeze)} + 1 \text{ (decision)} = k + 1
 \end{equation}
 
-For the three-location example, this reduces the cost from 7 CAS operations to 4 CAS operations.
+For the three-location example, this reduces the cost from 7 CAS operations to 4
+CAS operations.
+
+\subsection{Implementation Overview}
+
+\begin{figure}[t]
+  \centering
+  \begin{lstlisting}[language=C,
+                      basicstyle=\normalsize\ttfamily, numbers=left,
+                      numberstyle=\footnotesize, keywordstyle=\bfseries,
+                      commentstyle=\itshape\color{gray}, showstringspaces=false,
+                      frame=single, breaklines=true, breakatwhitespace=true]
+    readInternal(void *addr, MCASDescriptor *self) { retry_read: val = *addr;
+
+    if (!isDescriptor(val)) { return <val, val>; }
+
+    MCASDescriptor *parent = val->parent;
+
+    if (parent != self && parent->status == ACTIVE) { MCAS(parent); goto
+      retry_read; } else { return parent->status == SUCCESSFUL ? <val, val->new>
+      : <val, val->old>; } }
+  \end{lstlisting}
+  \caption{The \texttt{readInternal} auxiliary function: handling descriptors
+    and helping.}
+  \label{fig:readinternal}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \begin{lstlisting}[language=C,
+                      basicstyle=\normalsize\ttfamily, numbers=left,
+                      numberstyle=\footnotesize, keywordstyle=\bfseries,
+                      commentstyle=\itshape\color{gray}, showstringspaces=false,
+                      frame=single, breaklines=true, breakatwhitespace=true]
+    read(void *address) { <content, value> = readInternal(address, NULL); return
+      value; }
+
+MCAS(MCASDescriptor *desc) { success = true;
+
+  for wordDesc in desc->words { retry_word: <content, value> =
+    readInternal(wordDesc.address, desc);
+
+      if (content == &wordDesc) { continue; }
+
+      if (value != wordDesc.old) { success = false; break; }
+
+      if (desc->status != ACTIVE) { break; }
+
+      if (!CAS(wordDesc.address, content, &wordDesc)) { goto retry_word; } }
+
+  if (CAS(&desc.status, ACTIVE, success ? SUCCESSFUL : FAILED)) {
+    retireForCleanup(desc); }
+
+  returnValue = (desc.status == SUCCESSFUL); return returnValue; }
+  \end{lstlisting}
+  \caption{The read and MCAS operations: two-phase protocol (locking and
+    finalization).}
+  \label{fig:mcas-ops}
+\end{figure}
+
+The code in Figures \ref{fig:readinternal} and \ref{fig:mcas-ops} presents a
+simplified, essential representation of the Guerraoui et al.\ MCAS algorithm,
+omitting memory reclamation details and epoch tracking for clarity. The core
+mechanisms of helping, locking, and non-local linearization are fully preserved
+in this minimal form.
+
+\paragraph{The \texttt{readInternal} Function}
+
+The \texttt{readInternal} function (Figure \ref{fig:readinternal}) begins by
+directly reading the memory location (Line 4). If the location does not contain
+a descriptor pointer, it immediately returns the value as-is (Line 6). This happy
+path handles the common case where no concurrent MCAS operation has touched the
+location. However, if a descriptor pointer is discovered (Line 9), the thread
+obtains the parent descriptor and must determine whether that operation is still
+active.
+
+The helping mechanism kicks in at Lines 11-14. When a thread encounters an
+ACTIVE descriptor whose parent is not its own operation, it recursively calls
+\texttt{MCAS(parent)} to drive that operation to completion before proceeding
+(Lines 12-13). This ensures that no ACTIVE descriptor can remain indefinitely;
+any thread observing it will complete it. The self-check (\texttt{parent !=
+  self}) prevents an operation from recursively helping itself. After helping
+completes, the thread retries the read to observe the finalized state (Line 14).
+If the descriptor is already finalized (either SUCCESSFUL or FAILED), the thread
+interprets its result: for successful operations, it returns the new value; for
+failed operations, it returns the old value (Lines 16-19). This design ensures
+that reads never observe partial states ; they see either the state before the
+operation's linearization point or after it.
+
+\paragraph{The \texttt{read} Operation}
+
+The \texttt{read} operation (Figure \ref{fig:mcas-ops}, Lines 1-4) is a simple
+wrapper around \texttt{readInternal} with \texttt{self} set to NULL, indicating
+that this is not part of an MCAS operation.
+
+\paragraph{The MCAS Operation: Two-Phase Structure}
+
+The MCAS operation exhibits a clear two-phase structure: locking and
+finalization.
+
+In the \emph{locking phase} (Figure \ref{fig:mcas-ops}, Lines 6-15), the
+operation iterates over each target word in sorted order. For each
+word, it first calls \texttt{readInternal} (Line 7) to obtain the current value
+while handling any helping obligations. If the word already points to the
+current descriptor (Line 9), the thread moves to the next
+word indicating that another thread (or a prior attempt in the current
+operation) has already locked this location. If the current value does not match
+the expected old value (Lines 11), the operation must fail, so the thread
+breaks the loop and proceeds to finalization. If the operation status has
+changed (Line 13), the loop exits to prevent re-acquiring locations.
+Finally, the thread attempts a CAS to install a pointer to the descriptor at the
+target location (Lines 15). If the CAS fails, the thread retries (back to
+\texttt{retry\_word}), as the failure may indicate that another thread has
+concurrently helped this same operation to lock the same word.
+
+Once a location is locked by a descriptor, it
+remains locked. When all locations are either already locked or successfully
+locked, the operation enters the \emph{finalization phase} (Lines 17-18). Here,
+a single CAS atomically changes the descriptor status from ACTIVE to either
+SUCCESSFUL (if all locking succeeded) or FAILED (if any value mismatch was
+detected). This status CAS is the linearization point (Line 17): it marks
+the instant at which the multi-word update becomes logically atomic. The status
+field  determines whether subsequent reads
+observe the new or old values. Only one thread can successfully perform this CAS
+(due to the atomic nature of CAS), ensuring that the operation is finalized
+exactly once.
+
+\paragraph{Non-Local Linearization Points}
+
+The non-locality of the linearization point emerges clearly from this structure.
+Readers determine the logical value of a location by examining the descriptor
+status, which may be modified on a completely different memory location than the
+data words themselves. When a read observes a locked location (one pointing to a
+descriptor), it must wait for that descriptor's status to be finalized, at which
+point it learns whether the associated update succeeded. Thus, the effect of a
+k-word MCAS is determined by a single CAS on the descriptor's status field, not
+by k separate updates to data.
+In the common uncontended case, an MCAS requires
+only $k+1$ CASes (one per data word to lock, plus one for the status).
 
 \subsection{Conclusion}
-MCAS is therefore included not as an isolated or exceptional case, but as a deliberate benchmark for expressiveness. Its correctness fundamentally depends on non-local linearization and helping-driven interference.
+MCAS is therefore included not as an isolated or exceptional case, but as a
+deliberate benchmark for expressiveness. Its correctness fundamentally depends
+on non-local linearization and helping-driven interference.
