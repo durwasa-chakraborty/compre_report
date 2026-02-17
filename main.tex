@@ -59,6 +59,18 @@
   breaklines=true
 }
 
+\lstdefinelanguage{OCaml}{
+  keywords={let, val, method, in, and, rec, private, virtual, constraint, as, type, of, class, inherit, fun, function, try, match, with, when, module, open, include, functor, sig, struct, begin, end, if, then, else, while, do, for, to, downto, true, false},
+  sensitive=true,
+  comment=[n]{(*}{*)},
+  string=[b]",
+  morestring=[b]', % For character literals
+  % Optional: Style the keywords
+  keywordstyle=\color{blue}\bfseries,
+  commentstyle=\color{gray}\itshape,
+  stringstyle=\color{red},
+}
+
 \renewcommand\footnotetextcopyrightpermission[1]{}
 \acmConference[Preprint]
   {Technical Report}
