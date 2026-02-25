@@ -16,6 +16,7 @@
     "obstruction-freedom"
     "hoare-logic"
     "iris-proofmode"
-    "mcas-harris-2002"))
+    "mcas-harris-2002"
+    "vafeiadis2010rgsep"))
  '(or :bibtex :latex))
 

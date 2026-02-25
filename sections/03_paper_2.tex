@@ -28,29 +28,29 @@ Consider a lock-free stack with a \texttt{pop} operation.
 
 At the same time a different category of operations exist, \emph{effectful
 operations}, different in the sense that they necessarily update the abstract
-state, and those that are \emph{pure} which do not update the
-state. Effectful operations often, by established definition of the point
-where the effect takes place, becomes a natural candidate for linearization
-points, while pure operations do not. The key insight of the paper is that these
-two classes of executions should be treated differently, and that
-linearizability can be established without explicitly committing to a
-linearization point for every operation.
+state, and those that are \emph{pure} which do not update the state. Effectful
+operations often, by established definition of the point where the effect takes
+place, becomes a natural candidate for linearization points, while pure
+operations do not. The key insight of the paper is that these two classes of
+executions should be treated differently, and that linearizability can be
+established without explicitly committing to a linearization point for every
+operation.
 
 \subsection{Proposed Solution}
 
 The proposed approach replaces reasoning about linearization points and
-sequential histories with an instrumentation-based verification strategy. The method augments
-the abstract specification directly into the concrete implementation through
-additional state and assertions. Linearizability is then reduced to the problem
-of showing that certain assertions cannot fail.
+sequential histories with an instrumentation-based verification strategy. The
+method augments the abstract specification directly into the concrete
+implementation through additional state and assertions. Linearizability is then
+reduced to the problem of showing that certain assertions cannot fail.
 
-The core idea is to distinguish  whether an operation
-has performed an effectful abstract update or whether it has remained pure. For
-effectful executions, the abstract operation is executed at a candidate
-instruction that is already present in the implementation, such as a successful
-compare-and-swap. For pure executions, the method refrains from choosing a
-specific linearization point; instead, it records which return values are
-consistent with the abstract specification at some point during the execution.
+The core idea is to distinguish whether an operation has performed an effectful
+abstract update or whether it has remained pure. For effectful executions, the
+abstract operation is executed at a candidate instruction that is already
+present in the implementation, such as a successful compare-and-swap. For pure
+executions, the method refrains from choosing a specific linearization point;
+instead, it records which return values are consistent with the abstract
+specification at some point during the execution.
 
 This distinction is realized by instrumenting each operation with auxiliary
 variables that track abstract effects. One variable records the result of an
@@ -110,11 +110,11 @@ Determining the linearization point requires distinguishing between varying
 execution states: whether the queue is empty, whether it is non-empty, and
 whether the thread is actively "helping" another operation complete. Crucially,
 this results in a linearization point that is both input-dependent and
-execution-dependent. For example, if the queue is empty, the
-linearization point is not a state-modifying CAS, but rather the atomic read
-confirming \texttt{next == NULL}. Thus, unlike enqueue, the \texttt{tryDequeue} method
-resists a single static definition, requiring a case-by-case evaluation of the
-runtime execution path.
+execution-dependent. For example, if the queue is empty, the linearization point
+is not a state-modifying CAS, but rather the atomic read confirming \texttt{next
+  == NULL}. Thus, unlike enqueue, the \texttt{tryDequeue} method resists a
+single static definition, requiring a case-by-case evaluation of the runtime
+execution path.
 
 
 \subsection{Verification Procedure}
@@ -124,47 +124,33 @@ runtime execution path.
 \begin{lstlisting}[language=C]
 int tryDequeue(void) { Node next, head, tail; int pval;
 
-    // --- instrumentation at entry ---
-    lres = UNDEF;
-    can_return[EMPTY] = false;
+    // --- instrumentation at entry --- lres = UNDEF; can_return[EMPTY] = false;
 
-    while (true) {
-      head = Q->head;
-      tail = Q->tail;
-      next = head->tl;
+    while (true) { head = Q->head; tail = Q->tail; next = head->tl;
 
         if (Q->head != head) continue;
 
-        // PURE CHECKER (symbolic)
-        // if (AQ == empty) can_return[EMPTY] = true;
+        // PURE CHECKER (symbolic) // if (AQ == empty) can_return[EMPTY] = true;
 
         if (head == tail) { if (next == NULL) {
 
-                assert(
-                lres == EMPTY ||
-                (lres == UNDEF &&
-                can_return[EMPTY]) );
+                assert( lres == EMPTY || (lres == UNDEF && can_return[EMPTY]) );
 
                 return EMPTY; }
 
-            // --- CAS on tail
-            if (CAS(&Q->tail, tail, next))
-            { assert (lres ==UNDEF);
-              lres = spec_tryDequeue(); // WRONG LP, but still a
+            // --- CAS on tail if (CAS(&Q->tail, tail, next)) { assert (lres
+              ==UNDEF); lres = spec_tryDequeue(); // WRONG LP, but still a
               candidate }
 
         } else { pval = next->val;
 
-            // --- CAS on head
-            if (CAS(&Q->head, head, next)) {
-                assert(lres == UNDEF); lres = spec_tryDequeue();
-                assert(lres == pval); return pval; } } } }
+            // --- CAS on head if (CAS(&Q->head, head, next)) { assert(lres ==
+              UNDEF); lres = spec_tryDequeue(); assert(lres == pval); return
+              pval; } } } }
 \end{lstlisting}
 \caption{Instrumented \texttt{tryDequeue}}
 \label{fig:ms-instrumented}
 \end{figure}
-
-
 
 The verification procedure presented in this work is an automatic technique for
 proving the linearizability of concurrent data structure implementations. The
@@ -172,76 +158,145 @@ procedure operates by distinguishing between \emph{effectful} executions (which
 modify the shared abstract state) and \emph{pure} executions (which do not). The
 algorithm, formally defined as \texttt{PROVELINEARIZABLE}, takes as input the
 library's constructor, its operations, and their corresponding atomic functional
-specifications.
+specifications. The procedure is divided into two distinct phases: a
+\emph{Preparation Phase} that generates auxiliary constructs and a
+\emph{Checking Phase} that instruments the code for verification.
 
-The procedure is divided into two distinct phases: a \emph{Preparation Phase}
-that generates auxiliary constructs and a \emph{Checking Phase} that instruments
-the code for verification.
+\paragraph{Pure Checker Generation.}
+For each operation, a ``Pure Linearizability Checker'' is generated. This
+checker is derived from the specification by identifying all syntactically pure
+execution paths---paths that do not assign to global variables. Along these
+paths, the return statement \texttt{return v} is replaced with the assignment
+\texttt{can\_return[v] = true}.
 
-\subsubsection{Preparation Phase}
-In this initial phase, the algorithm performs the following steps:
-\begin{enumerate}
+\paragraph{Candidate Linearization Points.}
+The function \\ \texttt{GETCANDIDATELINPOINTS} analyzes the source code to
+identify potential effectful linearization points. It unfolds definitions of
+atomic primitives (like CAS) to expose control flow and selects one
+state-modifying command along each execution path as a candidate linearization
+point.
 
-    \item \textbf{Pure Checker Generation:} For each operation, a "Pure
-      Linearizability Checker" is generated. This checker is derived from the
-      specification by identifying all syntactically pure execution paths (paths
-      that do not assign to global variables). Along these paths, the return
-      statement \texttt{return v} is replaced with the assignment
-      \texttt{can\_return[v] = true}.
-    \item \textbf{Candidate Linearization Points:} The function
-      \\ \texttt{GETCANDIDATELINPOINTS} analyzes the source code to identify
-      potential effectful linearization points. It unfolds definitions of atomic
-      primitives (like CAS) to expose control flow and selects one
-      state-modifying command along each execution path as a candidate
-      linearization point.
-\end{enumerate}
+\paragraph{Instrumentation Variables.}
+In the checking phase, each operation $op_i$ is instrumented with two auxiliary
+variables per thread. The variable \texttt{lres} stores the result of the
+abstract operation if an effectful linearization point occurs; it is initialized
+to \texttt{UNDEF}. The boolean array \texttt{can\_return}, indexed by possible
+return values, tracks whether a valid pure linearization point has been
+observed; all entries are initialized to \texttt{false}.
 
-\subsubsection{Checking Phase}
-In the second phase, each operation $op_i$ is instrumented with auxiliary
-variables and assertions to verify correctness.
-
-\subsubsection{Instrumentation Variables}
-Two auxiliary variables are introduced for every thread:
-\begin{itemize}
-    \item \texttt{lres}: Stores the result of the abstract operation if an
-      effectful linearization point occurs. It is initialized to \texttt{UNDEF}.
-    \item \texttt{can\_return}: A boolean array indexed by possible return
-      values. It tracks whether a valid pure linearization point has been
-      observed. All entries are initialized to \texttt{false}.
-\end{itemize}
-
-\subsubsection{Code Transformation}
-The source code is modified as follows:
-\begin{itemize}
-    \item \textbf{At Candidate Points:} At every identified effectful
-      linearization point, code is inserted to execute the abstract
-      specification. An assertion \texttt{assert(lres == UNDEF)} ensures the
-      linearization point executes at most once per path.
-    \item \textbf{Background Pure Checking:} The verification tool (CAVE)
-      simulates the execution of the \emph{Pure Checker} after every atomic
-      command of the current thread and after every step of concurrently
-      executing threads. This updates \texttt{can\_return} continuously based on
-      the state of the abstract object.
-    \item \textbf{At Return Points:} Finally, at the method's return statement
-      returning value \texttt{res}, the following assertion is inserted:
-    \[
-\texttt{assert}(lres == res \lor (lres == UNDEF \land can\_return[res]))
-\]
-    This assertion verifies that either the operation linearized effectively
-    (matching \texttt{lres}) or it found a valid pure linearization point
-    (tracked by \texttt{can\_return}).
-\end{itemize}
-
-If the verification tool is able to establish that all inserted assertions hold
-on every execution path, then the implementation is concluded to be
+\paragraph{Code Transformation.}
+The source code is modified at three places. At every identified effectful
+linearization point, code is inserted to execute the abstract specification, and
+an assertion \texttt{assert(lres == UNDEF)} ensures the linearization point
+executes at most once per path. In the background, the verification tool
+simulates the execution of the Pure Checker after every atomic command of the
+current thread and after every step of concurrently executing threads, updating
+\texttt{can\_return} continuously based on the state of the abstract object.
+Finally, at each return point yielding value \texttt{res}, the following
+assertion is inserted:
+%
+\begin{multline*}
+  \texttt{assert}\bigl(lres = res \;\lor \\ (lres = \texttt{UNDEF} \land
+  \textit{can\_return}[res])\bigr)
+\end{multline*}
+%
+This asserts that either the operation linearized effectively (matching
+\texttt{lres}) or it found a valid pure linearization point (tracked by
+\texttt{can\_return}). If the verification tool establishes that all inserted
+assertions hold on every execution path, the implementation is concluded to be
 linearizable. Figure~\ref{fig:ms-instrumented} presents the instrumented version
-of the code. In this transformation, each \emph{CAS} instruction is augmented
-with assertion-based instrumentation to capture potential effectful
-linearization points. Additionally, for executions in which the queue is empty,
-a pure linearization checker is introduced; this component updates the
-\texttt{can\_return} flag to record that returning \texttt{EMPTY} is consistent
-with the abstract specification at some earlier instant.
+of the code, where each \emph{CAS} instruction is augmented with assertion-based
+instrumentation to capture potential effectful linearization points and a pure
+linearization checker updates \texttt{can\_return} for the empty-queue case.
 
+% ---------------------------------------------------------------
+
+\subsection{{\sc Verify} and RGSep}
+
+
+After the implementation has been transformed and instrumented with candidate
+linearisation points and pure-checker assertions, the {\sc Verify} procedure is
+invoked as the core proof engine \cite{vafeiadis2010rgsep}. {\sc Verify}
+constructs a \emph{most-general client}: a model of an unbounded number of
+threads each repeatedly calling the library methods. It then runs an abstract
+interpretation over this model to establish two properties simultaneously: (i)
+memory safety is maintained throughout execution, and (ii) none of the
+instrumented assertions are ever violated. Both obligations are discharged using
+the RGSep action-inference algorithm \cite{vafeiadis2010rgsep}. At a very high
+level a thread's \emph{guarantee} ($G$) is the set of actions it promises to
+restrict itself to when modifying shared memory, while its \emph{rely} ($R$) is
+the set of actions it assumes the environment (all other threads) might perform
+during its execution.
+
+The reason why we need Rely-Guarantee is because standard Hoare logic,
+$\{P\}\,c\,\{Q\}$, is unsound for concurrent programs: a postcondition
+established by one thread may be invalidated immediately by an interfering
+thread before the next instruction executes. RGSep \cite{vafeiadis2010rgsep}
+addresses this by confining interference to the shared heap and governing it
+entirely through actions, so that the verifier only reasons about one thread at
+a time against a single \emph{global rely} bucket rather than enumerating all
+possible interleavings.
+
+\subsection{Worked Example: Inferring Guarantees for the M\&S Queue}
+
+To make the above concrete, consider the Michael-Scott lock-free queue. The tool
+infers the thread guarantee $G$ automatically by scanning the code for
+successful compare-and-swap operations.
+
+\paragraph{Action $G_1$ :: appending the new node.}
+The first successful \texttt{CAS(\&tail->tl, next, node)} is identified.
+Inspecting the pre- and post-states of the shared heap yields:
+%
+\begin{equation}
+  G_1 \;\triangleq\; \texttt{tail}{\to}\texttt{tl} \mapsto \texttt{NULL}
+  \;\leadsto\; \texttt{tail}{\to}\texttt{tl} \mapsto \texttt{node}.
+\end{equation}
+%
+ie a thread may advance the \texttt{tl} pointer of the current tail node from
+\texttt{NULL} to the freshly allocated \texttt{node}.
+
+\paragraph{Action $G_2$ :: advancing the tail pointer.}
+The second successful \texttt{CAS(\&Q->tail, tail, node)} yields:
+%
+\begin{equation}
+  G_2 \;\triangleq\; \texttt{Q}{\to}\texttt{tail} \mapsto \texttt{tail}
+  \;\leadsto\; \texttt{Q}{\to}\texttt{tail} \mapsto \texttt{node}.
+\end{equation}
+%
+This captures the swing of the global tail pointer from the old tail cell to the
+new one.
+
+\paragraph{Composing the guarantee.}
+The two discovered mutations are packaged into the thread's full guarantee:
+%
+\begin{equation}
+  G \;=\; G_1 \cup G_2.
+\end{equation}
+
+All guarantees are collected into a single \emph{global rely},
+$R_{\mathrm{global}} = \bigcup_i G_i$. At each atomic step of the thread under
+verification, the verifier pauses at the current abstract shared state $S$ and
+applies $R_{\mathrm{global}}$ to $S$, effectively simulating the environment
+non-deterministically firing any action from the bucket.
+
+At this point, one might naturally wonder: if we keep applying these operations,
+won't the possibilities just keep expanding? If every application of the global
+rely yields a new state that we then have to account for, it seems like the
+state space would grow infinitely, making it impossible to ever reach a fixed
+point.
+
+The original paper addresses this exact issue using a \textsc{Stabilize} method,
+which guarantees that a fixed point is indeed eventually achieved
+\cite{vafeiadis2010rgsep}. However, I am omitting the formal details of
+\textsc{Stabilize} from this report, as its underlying proofs are quite dense,
+and I admittedly did not understand them well enough to confidently explain them
+here.
+
+Regardless of the underlying math the high-level takeaway is: because the
+$R_{\mathrm{global}}$ bucket already contains \emph{every} action any thread
+could ever perform, verifying a single thread against this one bucket is
+equivalent to verifying it against an unbounded, arbitrary interleaving of all
+threads. The state-explosion problem is thereby avoided entirely.
 
 
 \subsection{Conclusion}
@@ -253,6 +308,6 @@ where they are difficult to identify. Linearizability is reduced to a local
 safety property, enabling the use of mature verification tools.
 
 The method has been implemented in the \textsc{Cave} verification tool and
-evaluated on a range of concurrent stacks, queues, and set implementations.
-The results demonstrate that the approach is expressive enough to handle
-realistic concurrent data structures while remaining amenable to automation.
+evaluated on a range of concurrent stacks, queues, and set implementations. The
+results demonstrate that the approach is expressive enough to handle realistic
+concurrent data structures while remaining amenable to automation.
