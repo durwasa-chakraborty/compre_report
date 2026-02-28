@@ -14,13 +14,12 @@ concurrent OCaml programs that rely on features such as algebraic data types and
 mutable records.
 
 Existing Iris \cite{iris-proofmode} based approaches, including \emph{HeapLang},
-are expressive but poorly aligned with OCaml. They lack essential language
-constructs, most notably algebraic data types and mutually recursive functions,
-and require substantial manual translation from OCaml into the modeling
-language. This translation burden complicates proof maintenance and weakens the
-connection to source programs. The absence of atomic record fields forced
-programmers to rely on unsafe encodings, revealing a mismatch between the
-language’s abstractions and its intended concurrent usage.
+are expressive but poorly aligned with OCaml's language features and physical
+equality semantics. They lack essential language constructs, most notably
+algebraic data types and mutually recursive functions, and require substantial
+manual translation from OCaml into the modeling language. This makes realistic
+verification impractical. Zoo addresses this by introducing ZooLang, a language
+closely modeling OCaml.
 
 \begin{figure}[t]
 \centering
@@ -36,28 +35,36 @@ language’s abstractions and its intended concurrent usage.
 \label{fig:unsafe-atomic-field}
 \end{figure}
 
-Figure~\ref{fig:unsafe-atomic-field} illustrates this issue. The programmer
-wishes to treat the record field \texttt{next} as atomic, but since the type
-system does not permit atomic annotations on fields, the code casts the field’s
-memory to \texttt{Atomic.t} using \texttt{Obj.magic}. At this point, the type
-system’s guarantees are circumvented: the field is declared nonatomic in the
-type definition.
+Figure~\ref{fig:unsafe-atomic-field} illustrates an issue and further motivates
+the need for a new framework. The programmer wishes to treat the record field
+\texttt{next} as atomic, but since the type system does not permit atomic
+annotations on fields, the code casts the field’s memory to \texttt{Atomic.t}
+using \texttt{Obj.magic}. At this point, the type system’s guarantees are
+circumvented: the field is declared nonatomic in the type definition.
 
 The consequence is that the semantic classification of the location (as atomic
 or nonatomic) no longer aligns with the static program structure. This breaks
-the abstraction boundary enforced by the type system and complicates formal
-reasoning, since the memory model and verification logic must now account for
-behavior that is invisible at the type level.
+the abstraction boundary and complicates formal reasoning, since the memory
+model and verification logic must now account for behavior that is invisible at
+the type level.
 
+\emph{Heaplang} does not even know what a record is. To use \emph{HeapLang}, we
+would have to chop up the record and pretend it is made of basic pairs. If we do
+that, our proof does not match the real OCaml memory layout anymore. The proof
+becomes totally disconnected from the actual source code and we risk not
+checking the real program.
 
 The paper is motivated by these limitations. Its goal is to develop a practical
 verification framework for real-world concurrent OCaml programs, while refining
 the language and its semantics to better support safe and verifiable programs.
+Importantly, the framework continues to assume \emph{sequential consistency}
+(SC) as the underlying memory model. That is, all atomic operations are reasoned
+about as if they occur in a single global total order that respects program
+order.
 
 \subsection{Proposed Solution}
 The authors propose Zoo, a comprehensive framework for verifying concurrent
-OCaml 5 programs using Iris, a state-of-the-art concurrent separation logic
-mechanized in the Rocq proof assistant.
+OCaml 5 programs using Iris.
 \vspace{-0.5\baselineskip}
 \paragraph{ZooLang.}
 At the core of Zoo is ZooLang, a language designed to faithfully model a
@@ -66,10 +73,8 @@ and immutable records, references, atomic operations, mutual recursion, and
 concurrency primitives. It is deeply embedded in Rocq and comes with a formally
 defined operational semantics and a corresponding Iris-based program logic. The
 framework includes a tool, \textsf{ocaml2zoo}, which translates OCaml source
-programs into ZooLang code embedded in Rocq. Unlike HeapLang, which introduces
-various encodings in the translation that make the relation between source and
-verified programs difficult to maintain, ZooLang is syntactically very close to
-OCaml, ensuring that verification artifacts remain aligned with real
+programs into ZooLang code embedded in Rocq. ZooLang is syntactically very close
+to OCaml, ensuring that verification artifacts remain aligned with real
 implementations.
 
 \vspace{-0.5\baselineskip}
@@ -89,23 +94,34 @@ postconditions, each split into a private part (the stack invariant
 \textsf{stack\_inv t}) and an atomic part (the abstract stack state
 \textsf{stack\_model}). The atomic conditions capture the linearization point,
 stating that during execution the stack’s abstract state is atomically updated
-from \texttt{vs} to \texttt{v :: vs}.
-
+from \texttt{vs} to \texttt{v :: vs}. The precise semantics of this atomic
+triple and its proof obligations are unpacked in detail in the subsection
+~\ref{sec:bounded_mpmc_stack}\emph{Worked Example: Bounded MPMC Stack}.
 %% (TODO Reduce the line space)
 
 \vspace{-0.5\baselineskip}
 \paragraph{Physical Equality: A Precise Semantics.}
-A major technical contribution is a new, precise semantics for physical equality
-and \texttt{compare\_and\_set}. Physical equality is essential for lock-free
-algorithms but is dependent on compiler optimizations such as sharing and
-unsharing. The authors show that equating physical equality with structural
-equality is unsound. Instead, they model it as non-deterministic with carefully
-specified guarantees. They also introduce a mechanism for controlling unsharing
-through generative constructors. OCaml's physical equality operator
-(\texttt{==}) presents a fundamental challenge for concurrent reasoning: it is
-under-specified by the language semantics. The Zoo paper addresses this head-on
-by introducing generative constructors, which restore stable identity properties
-needed for sound CAS reasoning.
+%% TODO KC : change the contribution
+An important aspect of the paper concerns the semantics of physical equality and
+\texttt{compare\_and\_set}. While this is not presented as a primary technical
+contribution of the work, it emerged as a critical issue during the verification
+effort. Physical equality is indispensable for lock-free algorithms, since CAS
+relies on pointer identity rather than structural equality. However, in OCaml,
+physical equality (\texttt{==}) is intentionally under-specified and can be
+affected by compiler optimizations such as sharing and unsharing. During
+formalization, the authors observed that naively equating physical equality with
+structural equality is unsound. In particular, compiler induced unsharing can
+break assumptions required for CAS correctness, making concurrent reasoning
+unstable.
+
+To address this, the paper models physical equality as non-deterministic but
+subject to carefully specified guarantees. Moreover, the authors introduce
+generative constructors as a disciplined mechanism to control unsharing. These
+constructors ensure that freshly allocated values have stable identities, so
+that physical equality once established remains meaningful for reasoning. This
+insight—arising directly from the verification process—clarifies the semantic
+requirements necessary for sound CAS-based reasoning in OCaml’s concurrency
+model.
 
 Physical equality in OCaml is not fully determined by the abstract value
 semantics. For example:
@@ -130,29 +146,14 @@ implementation-specific choices about block allocation and layout.
 \begin{tabular}{c c}
 \textbf{Source Program} & \textbf{Heap Layout} \\[6pt]
 
-\begin{minipage}{0.45\linewidth}
-\begin{verbatim}
-(* Before optimization *)
-let x = Some 0 in
-let y = x in
-x == y (* true *)
-\end{verbatim}
-\end{minipage}
-&
-\begin{minipage}{0.45\linewidth}
-Before unsharing:
-
-x ----\textbackslash \\ > [Some | 0] (B1) \\ y ----/
-\end{minipage}
-
-\\[12pt]
 
 \begin{minipage}{0.45\linewidth}
 \begin{verbatim}
 (* After compiler unsharing *)
+
 let x = Some 0 in
-let y = Some 0 in
-x == y (*false *)
+let y = Some 0 in x == y
+ (*false *)
 \end{verbatim}
 \end{minipage}
 &
@@ -234,7 +235,269 @@ CAS operations on the state can now be relied upon. The intuition is :
 not clone it. This restores the invariant that if CAS fails, it is because the
 concurrent state truly changed, not because the compiler duplicated a value.
 
-\subsection{Conclusion}
+\subsection{Worked Example :: Bounded MPMC Stack}\label{sec:bounded_mpmc_stack}
+
+I will now extract the central proof ingredients from the Iris development of
+\texttt{mpmc\_bstack} as an example. The full definitions are shown in
+Figure~\ref{fig:mpmc-bstack-core}. I will highlight the lemmas that make the
+verification go through and explain their logical role.
+
+\begin{figure}[t]
+\centering
+\begin{lstlisting}[language=Coq]
+(* Injectivity of the encoding *) Lemma lst_to_val_inj' vs1 vs2 : lst_to_val
+  (length vs1) vs1 ≈ lst_to_val (length vs2) vs2 -> vs1 = vs2.
+
+(* Ghost state agreement *) Lemma model_agree γ vs1 vs2 : model₁ γ vs1 -∗ model₂
+  γ vs2 -∗ ⌜vs1 = vs2⌝.
+
+(* Ghost state update *) Lemma model_update {γ vs1 vs2} vs : model₁ γ vs1 -∗
+  model₂ γ vs2 ==∗ model₁ γ vs ∗ model₂ γ vs.
+
+(* Capacity validity *) Lemma mpmc_bstack_model_valid t ι cap vs :
+  mpmc_bstack_inv t ι cap -∗ mpmc_bstack_model t vs -∗ ⌜length vs ≤ cap⌝.
+
+(* Main push specification *) Lemma mpmc_bstack_push_spec t ι cap v : <<<
+  mpmc_bstack_inv t ι cap | ∀∀ vs, mpmc_bstack_model t vs >>> mpmc_bstack_push t
+  v @ ↑ι <<< ∃∃ b, ⌜b = bool_decide (length vs < cap)⌝ ∗ mpmc_bstack_model t (if
+  b then v :: vs else vs) | RET #b; True >>>.
+
+(* Pop specification *) Lemma mpmc_bstack_pop_spec t ι cap : <<< mpmc_bstack_inv
+  t ι cap | ∀∀ vs, mpmc_bstack_model t vs >>> mpmc_bstack_pop t @ ↑ι <<<
+  mpmc_bstack_model t (tail vs) | RET head vs; True >>>.
+\end{lstlisting}
+\caption{Core lemmas used in verifying \texttt{mpmc\_bstack}.}
+\label{fig:mpmc-bstack-core}
+\end{figure}
+
+\paragraph{Injectivity}
+
+The physical representation of the stack is an encoded value
+\texttt{lst\_to\_val (length vs) vs}. When CAS succeeds, we obtain physical
+equality between the stored value and the one we read. Injectivity then lifts
+this physical equality to Rocq-level equality of the abstract lists. In other
+words, this lemma bridges the gap between operational equality and mathematical
+equality.
+
+When the compare-and-swap works, we find out that the \texttt{front} of the
+stack is exactly \texttt{lst\_to\_val (length vs) vs}, and the value in memory
+is physically equal to what we read before. Operationally, this gives us the
+neat equation
+\begin{equation}
+\begin{split}
+&\texttt{lst\_to\_val (length }vs_1\texttt{) }vs_1 \\ &\quad =
+  \texttt{lst\_to\_val (length }vs_2\texttt{) }vs_2
+\end{split}
+\end{equation}. The proof obligation, thus is that,  we must conclude that the abstract lists
+themselves are equal just from the equality of these encoded values. We need a
+strict rule that says $f(vs_1)=f(vs_2) \Rightarrow vs_1=vs_2$. (which is
+injectivity).
+
+\paragraph{Twins algebra and agreement.}
+The ghost state uses the Twins resource algebra to split the abstract state into
+two halves. For example, the client holds $\text{model}_1\ \gamma\ vs_1$. This
+has three specific parts: $\text{model}_1$ is the client's resource token,
+$\gamma$ is a unique ghost name (like a serial number) linking it to the
+invariant's $\text{model}_2$ token, and $vs_1$ is the pure Rocq list
+representing the abstract state. Holding this means the client owns the token
+for stack $\gamma$ and asserts the state is currently $vs_1$.
+
+When we execute an operation, the \texttt{model\_agree} lemma brings the halves
+together. Because the $\gamma$ identifiers match, it mathematically proves the
+lists are identical, giving us the fact $vs_1 = vs_2$.
+
+
+Iris is built to manage
+spatial memory resources. The separating conjunction ($P \ast Q$) strictly
+requires both $P$ and $Q$ to be valid resources. If we attempt to connect a
+memory proposition $P$ directly with a pure mathematical fact $Q$ (such as $vs_1
+= vs_2$), the system will throw a type error. To bridge this gap, we wrap the
+pure fact inside a special modality, written as $\ulcorner vs_1 = vs_2
+\urcorner$. This embedding translates the mathematical truth into an Iris
+resource that formally consumes exactly zero memory. This mechanism enables us
+to safely construct formulas like $\text{model}_1\ \gamma\ vs_1 \ast \ulcorner
+vs_1 = vs_2 \urcorner$, placing the stateful resource and the mathematical fact
+legally side by side.
+
+\paragraph{Capacity reasoning.}
+The lemma \texttt{mpmc\_bstack\_model\_valid} extracts the key safety property
+of the bounded stack: any abstract list described by
+\texttt{mpmc\_bstack\_model} must satisfy \texttt{length vs <= cap}. This fact is
+used in the \texttt{push} proof to justify the branch where insertion is
+disallowed when the stack is full. Thus, logical capacity constraints are
+enforced at the specification level.
+
+
+\paragraph{Push and pop specifications.}
+An atomic triple is written as follows:
+
+\begin{equation}\label{eq:atomic-triple-generic}
+  \attriple{\forall\forall vs,\; P\; vs}{e}{\exists\exists r,\; Q\; vs\; r}
+\end{equation}
+
+\noindent
+The double angle brackets $\langle\!\langle\;\cdot\;\rangle\!\rangle$
+distinguish this from a standard Hoare triple $\{P\}\; e\; \{Q\}$.
+The precondition $P\; vs$ and postcondition $Q\; vs\; r$ refer to the
+\emph{shared abstract state} of the data structure. Standard Hoare logic assumes
+a sequential execution: it relies on the guarantee that no other thread will
+modify the state between the pre-condition and the post-condition. We need a
+different notation for concurrent systems because this assumption fails;
+we must always account for the possibility of competing threads invalidating the
+pre and post conditions.
+
+Lemma
+\texttt{mpmc\_bstack\_push\_spec} in Figure~\ref{fig:mpmc-bstack-core} follows a
+similar syntax structure.
+
+The above atomic triple is \emph{syntactic sugar}; its full meaning is given by the
+following Weakest Precondition formula:
+
+\begin{equation}\label{eq:atomic-triple-desugared}
+  \forall \Phi.\;
+  \Bigl(\forall vs,\;
+    P\; vs \wand
+    \bigl(\forall r,\;
+      Q\; vs\; r \wand \Phi\; r
+    \bigr)
+  \Bigr)
+  \wand
+  \mathit{WP}\; e\;\{\{\Phi\}\}
+\end{equation}
+
+\noindent
+Before I dive into the what the verification conditions are, lets unpack the
+above equation \ref{eq:atomic-triple-desugared}.
+expression. Separation logic extends classical logic with a \emph{spatial} connective
+called the \emph{magic wand}  (or \emph{separating implication}),
+written $A \wand B$. The proposition $A \wand B$ denotes a
+\emph{resource exchange contract}: if you provide the resource $A$,
+it is consumed and the resource $B$ is returned in its place.
+Ownership of $A$ is \emph{transferred away} from the caller; ownership of $B$
+is \emph{transferred back}. This transfer semantics is essential in concurrent
+settings because it prevents two threads from simultaneously claiming ownership
+of the same heap cell.
+
+A standard Hoare triple $\{P\}\; e\; \{Q\}$ is encoded in Iris as
+$P \wand \mathit{WP}\; e\;\{\{Q\}\}$,
+encoding a static contract in which the precondition $P$ must hold
+\emph{before} $e$ begins and $Q$ holds \emph{after} it terminates.
+However, this is insufficient for concurrent data structures. Because other
+threads may modify the shared state between any two instructions of $e$. The specification must instead be parameterised over
+\emph{any possible caller goal}, which motivates the leading universal
+quantifier $\forall \Phi$ in the desugared form~\eqref{eq:atomic-triple-desugared}.
+The Weakest Precondition $\mathit{WP}\; e\;\{\{\Phi\}\}$ asserts that
+expression $e$ executes safely and that, upon returning a value $r$,
+the proposition $\Phi\; r$ holds, where $\Phi : \mathit{val} \to \mathit{iProp}$
+encodes whatever the calling thread requires of the returned value.
+
+The push specification (Figure~\ref{fig:mpmc-bstack-core}) is stated as the
+following atomic triple:
+
+\begin{equation}\label{eq:mpmc-push-triple}
+  \begin{aligned}
+    &\langle\!\langle\;\forall vs,\;\model{t}{vs}\;\rangle\!\rangle\;
+      \push{t}{v} \;@\; \iota\\[0.3em]
+    &\quad\langle\!\langle\;
+      \exists b,\;
+        \pure{b = \mathit{bool\_decide}(\lvert vs \rvert < \mathit{cap})}\\
+    &\qquad\quad
+        \sep\; \model{t}{}\\
+    &\qquad\quad
+        (\text{if}\; b\; \text{then}\; v \mathbin{::} vs\; \text{else}\; vs)
+    \;\rangle\!\rangle
+  \end{aligned}
+\end{equation}
+
+\noindent
+The four components of this specification are as follows.
+
+\resizebox{\columnwidth}{!}{%
+\renewcommand{\arraystretch}{1.4}
+\begin{tabular}{@{}llp{3.2cm}@{}}
+\toprule
+\textbf{Component} & \textbf{Formula} & \textbf{Role} \\
+\midrule
+Private pre & $\inv{t}{\iota}{\mathit{cap}}$ &
+  Thread must own this before the call. \\
+Public pre & $\forall vs,\;\model{t}{vs}$ &
+  Shared state at the linearization point. \\
+Public post & $\exists b,\;\pure{\cdots}\sep\model{t}{\cdots}$ &
+  Updated state after the lineraization point\ closes. \\
+Private po & $\mathit{RET}\;\#b;\;\top$ &
+  Boolean $b$; no extra resources. \\
+\bottomrule
+\end{tabular}}
+
+\noindent
+Expanding the syntactic sugar of~\eqref{eq:mpmc-push-triple} yields the
+following raw Weakest Precondition judgment, which constitutes the actual
+proof obligation discharged in Iris:
+
+\begin{equation}\label{eq:mpmc-push-desugared}
+  \begin{aligned}
+    &\inv{t}{\iota}{\mathit{cap}} \wand \forall \Phi.\\[0.3em]
+    &\quad \Bigl(\forall vs,\;
+        \model{t}{vs} \wand\\
+    &\qquad \bigl(\forall b,\;
+        \pure{b = \mathit{bool\_decide}(\lvert vs \rvert < \mathit{cap})}\\
+    &\qquad\quad
+        \sep\; \model{t}{(\text{if}\; b\; \text{then}\; v \mathbin{::} vs\; \text{else}\; vs)}\\
+    &\qquad\quad
+        \wand \Phi\;\#b
+      \bigr)\Bigr)\\
+    &\quad \wand \WP{\push{t}{v}}{\iota}{\Phi}
+  \end{aligned}
+\end{equation}
+
+\noindent
+When a developer claims that their MPMC stack implementation is correct, the
+formal claim is precisely that the implementation \emph{satisfies
+specification}~\eqref{eq:mpmc-push-desugared}: given that the current thread
+owns the invariant token $\inv{t}{\iota}{\mathit{cap}}$,  the code of
+$\mathit{mpmc\_bstack\_push}$ will safely terminate and deliver a result
+satisfying $\Phi$.
+Before the linearization point is reached, the client has no direct access to
+the abstract stack state $vs$; the state is locked inside the invariant. Only
+at the \emph{single atomic step} corresponding to the linearization point does
+the proof open the invariant, observe $vs$, perform the update, and re-close
+the invariant, ensuring that the client's view of the state is
+\emph{instantaneous and consistent}.
+
+To make this concrete, consider a bounded stack with capacity $\mathit{cap} =
+1$. Thread~A begins a push of element $e_1$, reads the current length, and
+observes that the stack is empty ($\lvert vs_1 \rvert = 0 < 1$), concluding
+that insertion is permitted. Before Thread~A proceeds to the write step,
+Thread~B completes a full push of element $e_2$, bringing the stack to capacity
+($\lvert vs_2 \rvert = 1 = \mathit{cap}$). Thread~A then resumes and attempts
+to write $e_1$, believing (incorrectly) that the stack is still empty. The
+resulting state contains two elements in a stack whose capacity is one, reductio ad absurdum.
+
+The atomic triple specification forces any proof of correctness to mirror the
+true atomicity of the operation. Thread~A's proof must open the invariant
+$\inv{t}{\iota}{\mathit{cap}}$ to access the abstract model token
+$\model{t}{vs}$, extracting the fact that $\lvert vs_1 \rvert < \mathit{cap}$.
+However, because the \emph{read} instruction is a single atomic machine step,
+the proof must immediately close the invariant and return the model token to the
+shared pool. While Thread~A has returned the invariant token, Thread~B is free
+to open the invariant, push $e_2$, and close it, advancing the abstract state
+from $vs_1$ to $vs_2 = e_2 \mathbin{::} vs_1$. When Thread~A subsequently
+attempts the write and re-opens the invariant, Iris enforces a crucial
+discipline: because the invariant was closed and reopened in the interim, the
+proof is given a \emph{fresh, universally quantified} abstract state with no
+information relating $vs_2$ to $vs_1$. To justify the write, the proof must
+discharge $\lvert vs_2 \rvert < \mathit{cap}$, but the only capacity fact in
+scope is the now-stale $\lvert vs_1 \rvert < \mathit{cap}$. There is no proof
+term that bridges the two abstract states, and the Iris proof checker is left
+with the stuck goal
+\[
+  \lvert vs_1 \rvert < \mathit{cap}
+  \;\;\nvdash\;\;
+  \lvert vs_2 \rvert < \mathit{cap}.
+\]
+
+
+\paragraph{Conclusion.}
 This paper introduces Zoo, a practical framework for verifying concurrent OCaml
 5 programs, bridging real-world code and mechanized verification through
 ZooLang. It also contributes language improvements such as atomic record fields
@@ -245,5 +508,5 @@ including stacks, queues, bags, and a work-stealing deque. These results
 demonstrate the practicality and scalability of the framework. The project
 remains actively developed and last semester, I made couple of minor
 contributions to the
-codebase.\footnote{\url{https://github.com/clef-men/zoo/pull/2}}
-\footnote{\url{https://github.com/clef-men/zoo/pull/1}}
+codebase.\footnote{\url{https://github.com/clef-men/zoo/pull/1}}%
+\footnote{\url{https://github.com/clef-men/zoo/pull/2}}

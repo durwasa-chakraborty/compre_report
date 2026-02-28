@@ -26,6 +26,7 @@
     "sections/05_paper_4"
     "sections/06_paper_5"
     "sections/07_paper_6"
+    "sections/09_conclusion"
     "acmart"
     "acmart10"
     "amssymb"
@@ -38,6 +39,14 @@
     "mathtools")
    (TeX-add-symbols
     '("footnotetextcopyrightpermission" 1)
+    '("push" 2)
+    '("model" 2)
+    '("inv" 3)
+    '("WP" 3)
+    '("attriple" 3)
+    '("pure" 1)
+    "wand"
+    "sep"
     "Bbbk")
    (LaTeX-add-bibliographies
     "./references")

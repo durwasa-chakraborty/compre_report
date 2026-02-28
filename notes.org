@@ -277,10 +277,6 @@ interference ; invariants are too weak for this reasoning
 
 
 
-Here is a synthesized set of research notes capturing the entire "Aha!" journey of how this automated verification actually works. These are structured to easily slot into a literature review or a technical report on the automated verification of concurrent algorithms.
-
----
-
 # Discovery Notes: Automated Linearizability Verification (Vafeiadis 2010)
 
 ## 1. The Core Engine: What is the `VERIFY` Method Doing?
@@ -359,6 +355,118 @@ Rather than tracking exact, concrete memory shapes (e.g., a queue with exactly 1
 
 Because the tool only tracks the finite program variables explicitly written in the code, the abstract domain is finite. Once the memory state blurs into its widest possible summary shape, applying further actions like "append another node" results in the exact same summary shape. The condition $S = S_{old}$ is met, the fixed point is reached, and the static analysis terminates safely.
 
+
+* IRIS
+
+When verifying a concurrent data structure like a Multi-Producer Multi-Consumer (MPMC) stack, you need to prove that operations happen "atomically" (all at once) at a specific moment in time, known as the **linearization point**.
+
+To write this specification in Iris, we use a special syntax called an atomic triple:
+
+$\langle\langle\langle \forall\forall vs, P \ vs \rangle\rangle\rangle \ e \ \langle\langle\langle \exists\exists r, Q \ vs \ r \rangle\rangle\rangle$
+
+Under the hood, this syntactic sugar translates to a much denser logical formula:
+
+$\forall \Phi. (\forall vs, P \ vs \mathrel{-*} (Q \ vs \ r \mathrel{-*} \Phi \ r)) \mathrel{-*} WP \ e \ \{\{ \Phi \}\}$
+
+Let’s unpack exactly what this means by breaking it into smaller pieces.
+
+### 1. The Magic Wand: $A \mathrel{-*} B$
+
+Before diving into the formula, we need to understand the magic wand symbol ($-*$). In separation logic, this represents a **resource exchange**.
+
+If you have $A \mathrel{-*} B$, it means: *"If you give me the resource $A$, I will consume it and give you back the resource $B$."* It is a trade. You lose $A$, but you gain $B$.
+
+### 2. Standard Triples vs. Atomic Triples
+
+In standard separation logic, a normal Hoare triple looks like this:
+$\{P\} \ e \ \{Q\}$
+
+In Iris, this is encoded using the magic wand and a Weakest Precondition ($WP$):
+$P \mathrel{-*} WP \ e \ \{\{ Q \}\}$
+*(Translation: "Give me the precondition $P$, and running the code $e$ guarantees the postcondition $Q$.")*
+
+However, **atomic triples are stronger**. Because the state of a concurrent stack can be changed by other threads at any moment, the function can't just dictate a static postcondition. It needs to be flexible enough to work for *any* future goal the caller might have.
+
+That is why the desugared atomic triple starts with $\forall \Phi$.
+Here, $\Phi$ (Phi) represents the **caller's ultimate goal** or "continuation." It is whatever the caller wants to be true after the function returns.
+
+### 3. Weakest Precondition: $WP \ e \ \{\{ \Phi \}\}$
+
+The right side of the desugared formula is the Weakest Precondition.
+It simply means: *"If you run the expression $e$, it will safely execute and eventually produce a result that satisfies $\Phi$."* So, $\Phi : val \to iProp$ is just a formal way of saying "what the caller wants to happen to the returned value." For example, if $e$ is a stack push operation that returns `true`, the caller’s $\Phi$ might be a requirement that they now own the updated stack model, like `stack_model (x :: vs)`.
+
+### 4. The Heart of the Protocol: $\forall vs, P \ vs \mathrel{-*} (Q \ vs \ r \mathrel{-*} \Phi \ r)$
+
+This middle part is the core of the atomic shift. It is a strict contract—a handshake protocol—between the function you are verifying (the **spec**) and the person calling the function (the **client**).
+
+Let's translate it into plain English:
+
+> *"Dear Client,*
+> *At the exact moment this operation takes effect (the linearization point), the stack will be in some abstract state $vs$.*
+> *If I give you the precondition $P \ vs$, and I later update the state and give you the postcondition $Q \ vs \ r$...*
+> *...then you promise that those resources are enough for you to achieve your ultimate goal $\Phi \ r$."*
+
+### Putting It All Together
+
+If we read the entire desugared formula from left to right, it says:
+
+**"For any client goal $\Phi$, if the client agrees to the protocol (that $P$ and $Q$ are enough to achieve $\Phi$), then running the code $e$ will successfully satisfy their goal $\Phi$."**
+
+Instead of the function forcing a specific postcondition on the caller, the function says: "Tell me what you want to do ($\Phi$). As long as you can achieve it using my state updates ($P$ turning into $Q$), I guarantee my code ($e$) will make it happen."
+
+Alright so now lets understand the push_spec Lemma
+
+<<enter the push lemma mpmc_bstack_push_spec>> from the Figure 7 (reference it)
+
+
+
+* **Private Pre-condition ($x$):** `mpmc_bstack_inv t 𝜄cap`
+*(What your thread needs to own before even calling the function.)*
+* **Public Pre-condition ($y$):** `∀∀vs, mpmc_bstack_model t vs`
+*(The shared abstract state exposed exactly at the linearization point.)*
+* **Public Post-condition ($p$):** `∃∃b, ⌜b = bool_decide (length vs < cap)⌝ ∗ mpmc_bstack_model t (if b then v :: vs else vs)`
+*(The updated shared state right after the linearization point closes.)*
+* **Private Post-condition ($q$):** `RET #b; True`
+*(What your calling thread walks away with: the return value `#b` and the trivial resource `True`.)*
+
 ---
 
-Would you like to shift gears and look at how this RGSep abstraction logic might translate into a modern formal proof environment, perhaps exploring how these shape invariants would be mapped out in a system like Lean?
+### 2. The Desugared Form
+
+Here is that exact spec translated into the raw $\forall \Phi$ Weakest Precondition:
+
+$$mpmc\_bstack\_inv \ t \ \iota cap \mathrel{-*} \forall \Phi. \ (\forall vs, \ mpmc\_bstack\_model \ t \ vs \mathrel{-*} (\forall b, \ \⌜b = bool\_decide\ (length\ vs < cap)⌝ \ast mpmc\_bstack\_model \ t \ (\text{if } b \text{ then } v :: vs \text{ else } vs) \mathrel{-*} \Phi \ \#b)) \mathrel{-*} WP \ mpmc\_bstack\_push \ t \ v \ @ \ \iota \ \{\{ \Phi \}\}$$
+
+
+okay so what is the proof goal and how does it even matter that proving this above equation
+guarantees that the stack implementation si correct?
+
+Lets take an adversarial example say we have a stack t and thread 1 pushed element 1 it popped 1 before t2 pushed 1 now t2 can go through if the stack capacity is 1 <<create a good example to motivate this>> what is the guarantee how will the above equation actually solve in showing that the buggy implementation is not correct.
+
+Step 1: Thread A reads the length.
+
+To read the shared memory, Thread A's proof must open the invariant.
+
+It pulls out the token mpmc_bstack_model t vs1.
+
+It reads the length, seeing it's not full.
+
+The Trap: Because reading memory is one machine instruction, the atomic step is over. Thread A must immediately close the invariant and give the token back to the shared pool.
+
+Step 2: Thread B sneaks in.
+
+While Thread A is paused, Thread B opens the invariant, gets the token, pushes an element (making the stack full), and closes the invariant.
+
+Step 3: Thread A tries to write.
+
+Thread A wakes up. Based on its previous read, it thinks the stack has space.
+
+To perform the write operation, Thread A's proof must open the invariant again.
+
+It gets the token back. But here is the catch: because the invariant was closed and reopened, Iris forces the proof to introduce a brand new, totally arbitrary variable for the state. Let's call it vs2.
+
+The Verification Failure:
+Now, Thread A's proof is required to satisfy the conditions for a successful push. It needs to prove length vs2 < cap to justify the write.
+
+But it can't. Thread A only knows that length vs1 < cap. It knows absolutely nothing about vs2 (because Thread B changed it). The Coq proof will literally get stuck on a goal that looks like this:
+length vs1 < cap ⊢ length vs2 < cap

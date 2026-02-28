@@ -14,6 +14,7 @@
 \usepackage{hyperref}
 \usepackage{mathtools}
 
+
 % Add this to your preamble for proper code listing styling6:
 
 
@@ -47,7 +48,18 @@
   framesep=5pt,
   rulecolor=\color{black!20},  % Light gray border
 }
-
+\lstdefinelanguage{Coq}{
+  keywords={Lemma,Theorem,Proof,Definition,Fixpoint,CoFixpoint,
+            Inductive,CoInductive,Record,Class,Instance,
+            forall,exists,fun,match,with,end,let,in,if,then,else,
+            True,False,Prop,Type,Set,nat,bool,list,
+            intros,apply,exact,reflexivity,simpl,unfold,
+            rewrite,induction,destruct,assumption,auto,tauto,
+            iIntros,iApply,iExact,iFrame,iSplit,iExists},
+  sensitive=true,
+  morecomment=[s]{(*}{*)},
+  morestring=[b]",
+}
 
 \lstdefinestyle{Scala}{
   language=Scala,
@@ -71,11 +83,58 @@
   stringstyle=\color{red},
 }
 
+% ---------------------------------------------------------------
+% Iris / separation-logic macros
+% ---------------------------------------------------------------
+\newcommand{\wand}{\mathrel{-\!\!\ast}}
+\newcommand{\sep}{\mathbin{\ast}}
+\newcommand{\pure}[1]{\ulcorner #1 \urcorner}
+\newcommand{\attriple}[3]{%
+  \langle\!\langle\, #1 \,\rangle\!\rangle\;
+  #2\;
+  \langle\!\langle\, #3 \,\rangle\!\rangle}
+\newcommand{\WP}[3]{\mathit{WP}\; #1 \;@\; #2 \;\{\{ #3 \}\}}
+\newcommand{\inv}[3]{\mathit{mpmc\_bstack\_inv}\; #1\; #2\; #3}
+\newcommand{\model}[2]{\mathit{mpmc\_bstack\_model}\; #1\; #2}
+\newcommand{\push}[2]{\mathit{mpmc\_bstack\_push}\; #1\; #2}
+
 \renewcommand\footnotetextcopyrightpermission[1]{}
 \acmConference[Preprint]
   {Technical Report}
   {2026}
   {Chennai, India}
+
+  \lstset{
+  literate=
+    {⌜}{$\ulcorner$}1
+    {⌝}{$\urcorner$}1
+    {-∗}{$-\!\!*$}2
+    {==∗}{$=\!=\!*$}3
+    {∀∀}{$\forall\forall$}2
+    {∃∃}{$\exists\exists$}2
+    {∗}{$*$}1
+    {≈}{$\approx$}1
+    {≤}{$\leq$}1
+    {→}{$\to$}1
+    {γ}{$\gamma$}1
+    {ι}{$\iota$}1
+  }
+
+  \lstset{
+  inputencoding=utf8,
+  extendedchars=true,
+  literate=
+    {₁}{{\textsubscript{1}}}1
+    {₂}{{\textsubscript{2}}}1
+    {-∗}{{$\mathrel{-\!\!\ast}$}}2
+    {==∗}{{$\mathrel{=\!=\!\ast}$}}3
+    {∗}{{$\ast$}}1
+    {↑}{{\^{}}}1
+    {<<<}{{$\langle\!\langle\!\langle$}}3
+    {>>>}{{$\rangle\!\rangle\!\rangle$}}3
+    {∀}{{$\forall$}}1
+    {∃}{{$\exists$}}1,
+}
 
 % ----------------------------
 % Document
@@ -123,7 +182,7 @@ across semantic, algorithmic, and memory-model boundaries.
 \input{sections/05_paper_4}
 \input{sections/06_paper_5}
 \input{sections/07_paper_6}
-
+\input{sections/09_conclusion}
 
 \bibliographystyle{plain}
 \bibliography{./references}
